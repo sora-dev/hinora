@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+}
+
+enum RoleDefinitionType {
+  SYSTEM
+  CUSTOM
+}
+
+enum CategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PolicyStatus {
+  DRAFT
+  UNDER_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PolicyDocumentType {
+  POLICY
+  GUIDELINE
+  PROCEDURE
+}
+
+enum PolicyAnalysisStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum PolicyAnalysisProvider {
+  OPENAI
+  LOCAL_FALLBACK
+}
+
+model User {
+  id          String     @id @default(uuid())
+  email       String     @unique
+  username    String     @unique
+  password    String
+  firstName   String
+  lastName    String
+  department  String
+  role        Role       @default(EMPLOYEE)
+  roleTitle   String
+  status      UserStatus @default(ACTIVE)
+  lastLoginAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  certificates Certificate[]
+  testResults  TestResult[]
+}
+
+model Category {
+  id          String         @id @default(uuid())
+  name        String
+  code        String         @unique
+  description String?
+  color       String         @default("#2563EB")
+  status      CategoryStatus @default(ACTIVE)
+  parentId    String?
+  createdBy   String
+  updatedBy   String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryHierarchy")
+  policies Policy[]
+}
+
+model RoleDefinition {
+  id          String                 @id @default(uuid())
+  name        String                 @unique
+  code        String                 @unique
+  description String?
+  type        RoleDefinitionType     @default(CUSTOM)
+  createdBy   String
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  permissions RoleModulePermission[]
+}
+
+model RoleModulePermission {
+  id         String         @id @default(uuid())
+  roleId     String
+  moduleKey  String
+  canView    Boolean?
+  canCreate  Boolean?
+  canEdit    Boolean?
+  canDelete  Boolean?
+  canApprove Boolean?
+  canPublish Boolean?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  role RoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, moduleKey])
+}
+
+model Policy {
+  id                  String                 @id @default(uuid())
+  title               String
+  description         String?
+  fileName            String
+  filePath            String                 @unique // Path to uploaded file
+  fileType            String                 // e.g., "application/pdf"
+  department          String
+  type                PolicyDocumentType     @default(POLICY)
+  status              PolicyStatus           @default(DRAFT)
+  content             String?                // Extracted text from file for AI Q&A
+  analysisStatus      PolicyAnalysisStatus   @default(NOT_STARTED)
+  analysisProvider    PolicyAnalysisProvider?
+  analysisModel       String?
+  analysisError       String?
+  analysisRequestedAt DateTime?
+  analysisCompletedAt DateTime?
+  summaryShort        String?
+  summaryLong         String?
+  keyPoints           Json?
+  suggestedQuestions  Json?
+  version             Int                    @default(1)
+  isActive            Boolean                @default(true)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  createdBy           String
+  categoryId          String?
+
+  // Relations
+  category     Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  questions    Question[]
+  testResults  TestResult[]
+  certificates Certificate[]
+}
+
+model Question {
+  id       String   @id @default(uuid())
+  policyId String
+  text     String   // The question text
+  options  String[] // Multiple choice options (JSON array)
+  answer   Int      // Index of correct option in options array
+  order    Int      // Order of question in test
+
+  // Relations
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+}
+
+model TestResult {
+  id         String   @id @default(uuid())
+  userId     String
+  policyId   String
+  score      Int      // Number of correct answers
+  totalQuestions Int
+  passed     Boolean
+  submittedAt DateTime @default(now())
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+}
+
+model Certificate {
+  id        String   @id @default(uuid())
+  userId    String
+  policyId  String
+  issuedAt  DateTime @default(now())
+  certificateNumber String @unique
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+}
