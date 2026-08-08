@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import {
-  Bell,
   BookMarked,
   BookOpenText,
   Bot,
@@ -8,40 +7,23 @@ import {
   ChevronRight,
   Download,
   Headphones,
-  HelpCircle,
   Home,
-  LayoutDashboard,
-  Lightbulb,
   Megaphone,
   Search,
   SendHorizontal,
   ShieldCheck,
   Sparkles,
-  UserRound,
 } from "lucide-react";
 import {
-  DashboardMobileNav,
   DashboardPanel,
-  DashboardSidebar,
   DashboardStatCard,
   DashboardTopbar,
-  type DashboardNavSection,
 } from "../../../components/dashboard/primitives";
-
-const menuSections: readonly DashboardNavSection[] = [
-  {
-    items: [
-      { label: "Dashboard", Icon: LayoutDashboard, href: "/employee/dashboard", active: true },
-      { label: "Policy Library", Icon: BookOpenText, href: "/employee/policy-library" },
-      { label: "AI Assistant", Icon: Bot, href: "#" },
-      { label: "My Acknowledgments", Icon: ShieldCheck, href: "#" },
-      { label: "Bookmarks", Icon: Bookmark, href: "#" },
-      { label: "Notifications", Icon: Bell, href: "#", badge: "3" },
-      { label: "Help & Support", Icon: HelpCircle, href: "#" },
-      { label: "Profile", Icon: UserRound, href: "#" },
-    ],
-  },
-];
+import {
+  DashboardMobileNav,
+  DashboardSidebar,
+} from "../../../components/dashboard/dashboard-nav";
+import { ContinueReadingPanel } from "../../../components/dashboard/continue-reading-panel";
 
 const statCards = [
   {
@@ -79,33 +61,6 @@ const examples = [
   "Explain BSP Circular 1160.",
   "Summarize our IT Security Policy.",
   "What is our data privacy policy?",
-] as const;
-
-const continueReading = [
-  {
-    title: "Information Security Policy",
-    meta: "Last accessed 2 days ago",
-    progress: 75,
-    tone: "bg-violet-50 text-[var(--color-ai-accent)]",
-    barTone: "bg-gradient-to-r from-[var(--color-ai-accent)] to-[var(--color-active-menu)]",
-    Icon: ShieldCheck,
-  },
-  {
-    title: "Data Privacy Manual",
-    meta: "Last accessed 3 days ago",
-    progress: 42,
-    tone: "bg-emerald-50 text-[var(--color-success)]",
-    barTone: "bg-[var(--color-success)]",
-    Icon: BookOpenText,
-  },
-  {
-    title: "IT Risk Management Policy",
-    meta: "Last accessed 1 week ago",
-    progress: 100,
-    tone: "bg-amber-50 text-[var(--color-warning)]",
-    barTone: "bg-gradient-to-r from-[var(--color-warning)] to-[var(--color-success)]",
-    Icon: Bot,
-  },
 ] as const;
 
 const updatedPolicies = [
@@ -192,28 +147,8 @@ function AskIllustration() {
 
 export default function EmployeeDashboardPage() {
   return (
-    <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[256px_minmax(0,1fr)]">
-      <DashboardSidebar
-        className="bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.18),transparent_22%),linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)]"
-        sections={menuSections}
-        navClassName="flex-1"
-        brandPaddingClassName="px-2 pb-3"
-        brandSubtitleClassName="text-white/75"
-        footer={
-          <div className="rounded-2xl border border-white/8 bg-[rgba(11,31,58,0.72)] p-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-slate-200">
-              <Lightbulb className="h-4.5 w-4.5" />
-            </div>
-            <h3 className="mt-3 text-base font-bold text-white">Hinora Tip</h3>
-            <p className="mt-2 text-[0.88rem] leading-6 text-slate-200/75">
-              You can ask Hinora anything about our policies.
-            </p>
-            <a href="#" className="mt-2 inline-flex text-[0.84rem] font-bold text-[#9bb7ff]">
-              Learn more →
-            </a>
-          </div>
-        }
-      />
+    <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
+      <DashboardSidebar variant="employee" />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
@@ -228,7 +163,7 @@ export default function EmployeeDashboardPage() {
           avatarClassName="from-[var(--color-active-menu)] to-[var(--color-hover)]"
           className="py-3.5"
         />
-        <DashboardMobileNav sections={menuSections} />
+        <DashboardMobileNav variant="employee" />
 
         <div className="px-4 py-4 md:px-5">
           <section className="mb-3">
@@ -293,33 +228,7 @@ export default function EmployeeDashboardPage() {
           </section>
 
           <section className="mb-3 grid gap-3 2xl:grid-cols-3">
-            <DashboardPanel title="Continue Reading" action="View all" className="rounded-2xl">
-              <ul className="space-y-3.5">
-                {continueReading.map((item) => {
-                  const Icon = item.Icon;
-
-                  return (
-                    <li key={item.title} className="flex items-start gap-3">
-                      <span className={`mt-0.5 flex h-11 w-11 items-center justify-center rounded-xl ${item.tone}`}>
-                        <Icon className="h-5 w-5" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <h3 className="m-0 text-[0.95rem] font-semibold text-slate-900">{item.title}</h3>
-                            <p className="m-0 text-[0.8rem] text-slate-500">{item.meta}</p>
-                          </div>
-                          <span className="text-[0.8rem] font-bold text-slate-500">{item.progress}%</span>
-                        </div>
-                        <div className="mt-2.5 h-[5px] overflow-hidden rounded-full bg-slate-100">
-                          <span className={`block h-full rounded-full ${item.barTone}`} style={{ width: `${item.progress}%` }} />
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </DashboardPanel>
+            <ContinueReadingPanel />
 
             <DashboardPanel title="Recently Updated Policies" action="View all" className="rounded-2xl">
               <ul className="space-y-3.5">

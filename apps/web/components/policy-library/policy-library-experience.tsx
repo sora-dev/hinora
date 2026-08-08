@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
@@ -21,13 +20,9 @@ import {
   SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
-import {
-  DashboardMobileNav,
-  DashboardPanel,
-  DashboardSidebar,
-  DashboardTopbar,
-  type DashboardNavSection,
-} from "../dashboard/primitives";
+import { DashboardPanel, DashboardTopbar } from "../dashboard/primitives";
+import { DashboardMobileNav, DashboardSidebar } from "../dashboard/dashboard-nav";
+import { DropdownSelect } from "../ui/dropdown-select";
 
 const DEFAULT_API_BASE_URL = "http://localhost:3001";
 const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
@@ -38,11 +33,9 @@ type CategoryStatus = "ACTIVE" | "INACTIVE";
 
 type PolicyLibraryExperienceProps = {
   mode: "admin" | "employee";
-  sections: readonly DashboardNavSection[];
   profileName: string;
   profileRole: string;
   avatarText: string;
-  footer: ReactNode;
 };
 
 type CategoryCard = {
@@ -322,11 +315,9 @@ function LibraryIllustration() {
 
 export default function PolicyLibraryExperience({
   mode,
-  sections,
   profileName,
   profileRole,
   avatarText,
-  footer,
 }: PolicyLibraryExperienceProps) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -448,12 +439,7 @@ export default function PolicyLibraryExperience({
 
   return (
     <main className="grid min-h-screen bg-[#f4f7fb] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
-      <DashboardSidebar
-        className="bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.18),transparent_20%),linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)]"
-        sections={sections}
-        navClassName="flex-1"
-        footer={footer}
-      />
+      <DashboardSidebar variant={mode} />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
@@ -469,7 +455,7 @@ export default function PolicyLibraryExperience({
           showMenuButton
           className="bg-white/88"
         />
-        <DashboardMobileNav sections={sections} />
+        <DashboardMobileNav variant={mode} />
 
         <div className="px-4 py-5 md:px-5">
           <div className="mb-5">
@@ -774,35 +760,33 @@ export default function PolicyLibraryExperience({
                   <span className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
                     Category
                   </span>
-                  <select
-                    value={selectedCategoryId}
-                    onChange={(event) => setSelectedCategoryId(event.target.value)}
-                    className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-[var(--color-active-menu)]"
-                  >
-                    <option value="all">All Categories</option>
-                    {allCategories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
+                  <DropdownSelect
+                    value={selectedCategoryId === "all" ? "" : selectedCategoryId}
+                    onChange={(value) => setSelectedCategoryId(value || "all")}
+                    options={allCategories.map((category) => ({
+                      value: category.id,
+                      label: category.name,
+                    }))}
+                    placeholder="All Categories"
+                    allowClear
+                    aria-label="Filter by category"
+                  />
                 </label>
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
                     Status
                   </span>
-                  <select
+                  <DropdownSelect
                     value={selectedStatus}
-                    onChange={(event) => setSelectedStatus(event.target.value as "" | PolicyStatus)}
-                    className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-[var(--color-active-menu)]"
-                  >
-                    <option value="">All Status</option>
-                    {statuses.map((status) => (
-                      <option key={status} value={status}>
-                        {formatStatusLabel(status)}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => setSelectedStatus(value as "" | PolicyStatus)}
+                    options={statuses.map((status) => ({
+                      value: status,
+                      label: formatStatusLabel(status),
+                    }))}
+                    placeholder="All Status"
+                    allowClear
+                    aria-label="Filter by status"
+                  />
                 </label>
                 <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
                   <div className="font-semibold text-slate-700">Categories Loaded</div>

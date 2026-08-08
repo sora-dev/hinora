@@ -251,6 +251,8 @@ export class PoliciesService {
       department: policy.department,
       type: policy.type,
       status: policy.status,
+      version: policy.version,
+      isActive: policy.isActive,
       createdAt: policy.createdAt,
       updatedAt: policy.updatedAt,
       createdBy: policy.createdBy,

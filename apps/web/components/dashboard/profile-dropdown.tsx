@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpenText,
@@ -15,6 +16,7 @@ import {
   Shield,
   User,
 } from "lucide-react";
+import { getProfileHrefFromPathname } from "./navigation";
 
 type ProfileDropdownProps = {
   profileName: string;
@@ -26,6 +28,7 @@ type ProfileDropdownProps = {
 type MenuItem = {
   label: string;
   Icon: LucideIcon;
+  href?: string;
   onSelect?: () => void;
   toneClassName?: string;
 };
@@ -39,6 +42,8 @@ export default function ProfileDropdown({
   avatarClassName,
 }: ProfileDropdownProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const profileHref = getProfileHrefFromPathname(pathname);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -70,7 +75,7 @@ export default function ProfileDropdown({
   }
 
   const primaryItems: MenuItem[] = [
-    { label: "My Profile", Icon: User },
+    { label: "My Profile", Icon: User, href: profileHref },
     { label: "Change Password", Icon: KeyRound },
     { label: "Appearance", Icon: Palette },
     { label: "Language", Icon: Languages },
@@ -114,16 +119,29 @@ export default function ProfileDropdown({
           </div>
 
           <div className="space-y-1">
-            {primaryItems.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[0.95rem] font-medium text-white/90 transition hover:bg-white/6"
-              >
-                <item.Icon className="h-4.5 w-4.5 text-white/80" />
-                <span>{item.label}</span>
-              </button>
-            ))}
+            {primaryItems.map((item) =>
+              item.href ? (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  onClick={() => setIsOpen(false)}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[0.95rem] font-medium text-white/90 transition hover:bg-white/6"
+                >
+                  <item.Icon className="h-4.5 w-4.5 text-white/80" />
+                  <span>{item.label}</span>
+                </Link>
+              ) : (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={item.onSelect}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[0.95rem] font-medium text-white/90 transition hover:bg-white/6"
+                >
+                  <item.Icon className="h-4.5 w-4.5 text-white/80" />
+                  <span>{item.label}</span>
+                </button>
+              ),
+            )}
           </div>
 
           <div className="my-3 border-t border-white/12" />

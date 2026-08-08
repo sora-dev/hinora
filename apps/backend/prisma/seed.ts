@@ -8,6 +8,7 @@ import {
   UserStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { moduleOrder, type ModuleKey } from '../src/roles-permissions/permission-modules';
 
 const prisma = new PrismaClient();
 
@@ -77,39 +78,40 @@ const roleDefinitions = [
   },
 ] as const;
 
-const moduleKeys = [
-  'Dashboard',
-  'Policy Library',
-  'Categories',
-  'Users',
-  'Roles & Permissions',
-  'Acknowledgments',
-  'AI Assistant Analytics',
-  'Reports',
-  'Audit Logs',
-  'Company',
-  'Settings',
-  'Integrations',
-  'System Health',
-  'Backup & Restore',
-] as const;
+type PermissionFlags = {
+  canView: boolean | null;
+  canCreate: boolean | null;
+  canEdit: boolean | null;
+  canDelete: boolean | null;
+  canApprove: boolean | null;
+  canPublish: boolean | null;
+};
 
-const rolePermissionMap: Record<
-  (typeof roleDefinitions)[number]['name'],
-  Record<
-    (typeof moduleKeys)[number],
-    {
-      canView: boolean | null;
-      canCreate: boolean | null;
-      canEdit: boolean | null;
-      canDelete: boolean | null;
-      canApprove: boolean | null;
-      canPublish: boolean | null;
-    }
-  >
-> = {
-  Administrator: Object.fromEntries(
-    moduleKeys.map((moduleKey) => [
+function buildRolePermissions(
+  viewKeys: ModuleKey[],
+  overrides: Partial<Record<ModuleKey, PermissionFlags>> = {},
+): Record<ModuleKey, PermissionFlags> {
+  const viewSet = new Set(viewKeys);
+
+  return Object.fromEntries(
+    moduleOrder.map((moduleKey) => {
+      const base: PermissionFlags = {
+        canView: viewSet.has(moduleKey),
+        canCreate: false,
+        canEdit: false,
+        canDelete: false,
+        canApprove: false,
+        canPublish: false,
+      };
+
+      return [moduleKey, { ...base, ...(overrides[moduleKey] ?? {}) }];
+    }),
+  ) as Record<ModuleKey, PermissionFlags>;
+}
+
+function fullAccessPermissions(): Record<ModuleKey, PermissionFlags> {
+  return Object.fromEntries(
+    moduleOrder.map((moduleKey) => [
       moduleKey,
       {
         canView: true,
@@ -120,143 +122,82 @@ const rolePermissionMap: Record<
         canPublish: true,
       },
     ]),
-  ) as Record<(typeof moduleKeys)[number], {
-    canView: boolean | null;
-    canCreate: boolean | null;
-    canEdit: boolean | null;
-    canDelete: boolean | null;
-    canApprove: boolean | null;
-    canPublish: boolean | null;
-  }>,
-  'Policy Administrator': {
-    Dashboard: { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Policy Library': { canView: true, canCreate: true, canEdit: true, canDelete: true, canApprove: true, canPublish: true },
-    Categories: { canView: true, canCreate: true, canEdit: true, canDelete: true, canApprove: null, canPublish: null },
-    Users: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Roles & Permissions': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Acknowledgments: { canView: true, canCreate: true, canEdit: true, canDelete: false, canApprove: true, canPublish: false },
-    'AI Assistant Analytics': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Reports: { canView: true, canCreate: true, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Audit Logs': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Company: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Settings: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Integrations: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'System Health': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Backup & Restore': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-  },
-  'Compliance Officer': {
-    Dashboard: { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Policy Library': { canView: true, canCreate: false, canEdit: true, canDelete: false, canApprove: true, canPublish: false },
-    Categories: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Users: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Roles & Permissions': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Acknowledgments: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: true, canPublish: false },
-    'AI Assistant Analytics': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Reports: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Audit Logs': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Company: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Settings: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Integrations: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'System Health': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Backup & Restore': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-  },
-  Auditor: {
-    Dashboard: { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Policy Library': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Categories: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Users: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Roles & Permissions': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Acknowledgments: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'AI Assistant Analytics': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Reports: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Audit Logs': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Company: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Settings: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Integrations: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'System Health': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Backup & Restore': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-  },
-  'HR Officer': {
-    Dashboard: { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Policy Library': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Categories: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Users: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Roles & Permissions': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Acknowledgments: { canView: true, canCreate: true, canEdit: true, canDelete: false, canApprove: true, canPublish: false },
-    'AI Assistant Analytics': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Reports: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Audit Logs': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Company: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Settings: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Integrations: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'System Health': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Backup & Restore': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-  },
-  'Department Head': {
-    Dashboard: { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Policy Library': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: true, canPublish: false },
-    Categories: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Users: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Roles & Permissions': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Acknowledgments: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: true, canPublish: false },
-    'AI Assistant Analytics': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Reports: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Audit Logs': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Company: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Settings: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Integrations: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'System Health': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Backup & Restore': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-  },
-  'IT Specialist': {
-    Dashboard: { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Policy Library': { canView: true, canCreate: false, canEdit: true, canDelete: false, canApprove: false, canPublish: false },
-    Categories: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Users: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Roles & Permissions': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Acknowledgments: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'AI Assistant Analytics': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Reports: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Audit Logs': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Company: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Settings: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Integrations: { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'System Health': { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Backup & Restore': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-  },
-  User: {
-    Dashboard: { canView: true, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Policy Library': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Categories: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Users: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Roles & Permissions': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Acknowledgments: { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'AI Assistant Analytics': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Reports: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Audit Logs': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Company: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Settings: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Integrations: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'System Health': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Backup & Restore': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-  },
-  Guest: {
-    Dashboard: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Policy Library': { canView: true, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Categories: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Users: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Roles & Permissions': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Acknowledgments: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'AI Assistant Analytics': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Reports: { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    'Audit Logs': { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false, canPublish: false },
-    Company: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Settings: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    Integrations: { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'System Health': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-    'Backup & Restore': { canView: false, canCreate: null, canEdit: null, canDelete: null, canApprove: null, canPublish: null },
-  },
+  ) as Record<ModuleKey, PermissionFlags>;
+}
+
+const rolePermissionMap: Record<
+  (typeof roleDefinitions)[number]['name'],
+  Record<ModuleKey, PermissionFlags>
+> = {
+  Administrator: fullAccessPermissions(),
+  'Policy Administrator': buildRolePermissions([
+    'Dashboard',
+    'Policy Library',
+    'Policy Management',
+    'Policy Assignments',
+    'Categories',
+    'Compliance Center',
+    'Assessment Builder',
+    'Reports',
+    'Audit Logs',
+  ]),
+  'Compliance Officer': buildRolePermissions([
+    'Dashboard',
+    'Policy Library',
+    'Policy Management',
+    'Categories',
+    'Compliance Center',
+    'Reports',
+    'Audit Logs',
+    'Notifications',
+  ]),
+  Auditor: buildRolePermissions([
+    'Dashboard',
+    'Policy Library',
+    'Compliance Center',
+    'Reports',
+    'Audit Logs',
+  ]),
+  'HR Officer': buildRolePermissions([
+    'Dashboard',
+    'Policy Library',
+    'Compliance Center',
+    'Reports',
+    'Users',
+    'Departments',
+  ]),
+  'Department Head': buildRolePermissions([
+    'Dashboard',
+    'Policy Library',
+    'Categories',
+    'Compliance Center',
+    'Reports',
+    'My Compliance',
+    'Notifications',
+  ]),
+  'IT Specialist': buildRolePermissions([
+    'Dashboard',
+    'Policy Library',
+    'Policy Management',
+    'Categories',
+    'Compliance Center',
+    'Assessment Builder',
+    'Reports',
+    'Audit Logs',
+    'Settings',
+  ]),
+  User: buildRolePermissions([
+    'Dashboard',
+    'Policy Library',
+    'My Compliance',
+    'Bookmarks',
+    'Notifications',
+    'Settings',
+  ]),
+  Guest: buildRolePermissions(['Policy Library']),
 };
+
+const moduleKeys = moduleOrder;
 
 const seedUsers = [
   {

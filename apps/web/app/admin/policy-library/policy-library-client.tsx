@@ -2,37 +2,31 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity,
-  BadgeCheck,
   Bot,
-  Building2,
   CircleHelp,
-  ClipboardList,
   Download,
   FilePlus2,
   FileText,
   Files,
   Filter,
   FolderTree,
-  HardDrive,
-  LayoutDashboard,
   Search,
-  Settings2,
-  ShieldCheck,
   Upload,
-  Users,
-  Workflow,
-  ChartColumn,
 } from "lucide-react";
 import {
-  DashboardMobileNav,
   DashboardPanel,
-  DashboardSidebar,
   DashboardStatCard,
   DashboardTopbar,
-  type DashboardNavSection,
 } from "../../../components/dashboard/primitives";
-import { useSidebarPermissions } from "../../../components/dashboard/use-sidebar-permissions";
+import {
+  DashboardMobileNav,
+  DashboardSidebar,
+} from "../../../components/dashboard/dashboard-nav";
+import { DropdownSelect } from "../../../components/ui/dropdown-select";
+import UploadPolicyWizard, {
+  type UploadWizardSubmitPayload,
+} from "../../../components/policy-library/upload-policy-wizard";
+import { getHinoraSession } from "../../../components/dashboard/session";
 
 type PolicyStatus = "DRAFT" | "UNDER_REVIEW" | "PUBLISHED" | "ARCHIVED";
 type PolicyType = "POLICY" | "GUIDELINE" | "PROCEDURE";
@@ -94,53 +88,7 @@ type PoliciesResponse = {
 type PolicyRecordLike = Partial<PolicyRecord> &
   Pick<PolicyRecord, "id" | "title" | "fileName" | "filePath" | "fileType" | "createdAt" | "updatedAt" | "createdBy">;
 
-type UploadFormState = {
-  title: string;
-  description: string;
-  categoryId: string;
-  department: string;
-  type: PolicyType;
-  status: PolicyStatus;
-};
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
-
-const sidebarSections: readonly DashboardNavSection[] = [
-  {
-    label: "MAIN",
-    items: [
-      { label: "Dashboard", Icon: LayoutDashboard, href: "/admin/dashboard" },
-      { label: "Policy Management", Icon: Files, href: "/admin/policy-management", active: true },
-      { label: "Policy Library", Icon: Files, href: "/admin/policy-library" },
-      { label: "Categories", Icon: FolderTree, href: "/admin/categories" },
-      { label: "Users", Icon: Users, href: "/admin/users" },
-      { label: "Roles & Permissions", Icon: ShieldCheck, href: "/admin/roles-permissions" },
-      { label: "Acknowledgments", Icon: BadgeCheck, href: "#" },
-      { label: "AI Assistant Analytics", Icon: Bot, href: "#" },
-      { label: "Reports", Icon: ChartColumn, href: "#" },
-      { label: "Audit Logs", Icon: ClipboardList, href: "#" },
-    ],
-  },
-  {
-    label: "SYSTEM",
-    items: [
-      { label: "Company", Icon: Building2, href: "#" },
-      { label: "Settings", Icon: Settings2, href: "#" },
-      { label: "Integrations", Icon: Workflow, href: "#" },
-      { label: "System Health", Icon: Activity, href: "#" },
-      { label: "Backup & Restore", Icon: HardDrive, href: "#" },
-    ],
-  },
-];
-
-const defaultUploadForm: UploadFormState = {
-  title: "",
-  description: "",
-  categoryId: "",
-  department: "",
-  type: "POLICY",
-  status: "DRAFT",
-};
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -216,40 +164,6 @@ function normalizePoliciesResponse(response: PoliciesResponse): PoliciesResponse
   };
 }
 
-function Modal({
-  title,
-  description,
-  children,
-  onClose,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-900/45 p-0 sm:items-center sm:justify-center sm:p-4">
-      <div className="w-full rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-            {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500"
-            aria-label="Close dialog"
-          >
-            ✕
-          </button>
-        </div>
-        <div className="max-h-[80vh] overflow-y-auto px-5 py-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 async function requestJson<T>(path: string, init?: RequestInit) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -266,18 +180,14 @@ async function requestJson<T>(path: string, init?: RequestInit) {
 }
 
 export default function AdminPolicyLibraryClient() {
-  const permissionSections = useSidebarPermissions(sidebarSections);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | PolicyStatus>("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [data, setData] = useState<PoliciesResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadForm, setUploadForm] = useState<UploadFormState>(defaultUploadForm);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [reanalyzingPolicyId, setReanalyzingPolicyId] = useState<string | null>(null);
 
   const loadPolicies = useCallback(async () => {
@@ -315,53 +225,51 @@ export default function AdminPolicyLibraryClient() {
     }
 
     setCategoryFilter((current) => current || nextCategoryId);
-    setUploadForm((current) => (current.categoryId ? current : { ...current, categoryId: nextCategoryId }));
   }, []);
 
   const totalCategories = data?.filters.categories.length ?? 0;
   const policies = data?.data ?? [];
 
-  async function handleUploadSubmit() {
-    if (!selectedFile) {
-      setErrorMessage("Please choose a policy file to upload.");
-      return;
-    }
-
-    setIsSubmitting(true);
+  async function submitPolicyUpload(
+    payload: UploadWizardSubmitPayload,
+    status: "DRAFT" | "PUBLISHED",
+  ) {
     setErrorMessage("");
     setSuccessMessage("");
 
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("title", uploadForm.title);
-      formData.append("description", uploadForm.description);
-      formData.append("categoryId", uploadForm.categoryId);
-      formData.append("department", uploadForm.department);
-      formData.append("type", uploadForm.type);
-      formData.append("status", uploadForm.status);
-      formData.append("createdBy", "John Dela Cruz");
+    const formData = new FormData();
+    formData.append("file", payload.file);
+    formData.append("title", payload.form.title.trim());
+    formData.append("description", payload.form.description.trim());
+    formData.append("categoryId", payload.form.categoryId);
+    formData.append("department", payload.form.department.trim());
+    formData.append("type", payload.form.type);
+    formData.append("status", status);
+    formData.append("aiOptions", JSON.stringify(payload.aiOptions));
+    formData.append(
+      "createdBy",
+      getHinoraSession()?.name?.trim() || "Admin User",
+    );
 
-      const response = await fetch(`${API_BASE_URL}/policies/upload`, {
-        method: "POST",
-        body: formData,
-      });
+    const response = await fetch(`${API_BASE_URL}/policies/upload`, {
+      method: "POST",
+      body: formData,
+    });
 
-      if (!response.ok) {
-        const errorBody = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(errorBody?.message ?? "Unable to upload policy.");
-      }
-
-      setShowUploadModal(false);
-      setUploadForm({ ...defaultUploadForm, categoryId: categoryFilter });
-      setSelectedFile(null);
-      setSuccessMessage("Policy uploaded successfully.");
-      await loadPolicies();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to upload policy.");
-    } finally {
-      setIsSubmitting(false);
+    if (!response.ok) {
+      const errorBody = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(
+        errorBody?.message ??
+          (status === "PUBLISHED" ? "Unable to publish policy." : "Unable to save draft."),
+      );
     }
+
+    setSuccessMessage(
+      status === "PUBLISHED"
+        ? "Policy published successfully."
+        : "Policy draft saved successfully.",
+    );
+    await loadPolicies();
   }
 
   function exportPolicies() {
@@ -409,21 +317,7 @@ export default function AdminPolicyLibraryClient() {
 
   return (
     <main className="grid min-h-screen bg-[#f4f7fb] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
-      <DashboardSidebar
-        className="bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.18),transparent_20%),linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)]"
-        sections={permissionSections}
-        footer={
-          <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/6 p-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
-              <Building2 className="h-4.5 w-4.5" />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-white">Rural Bank of Itogon</div>
-              <div className="text-[0.8rem] text-slate-200/70">Organization</div>
-            </div>
-          </div>
-        }
-      />
+      <DashboardSidebar variant="admin" />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
@@ -438,7 +332,7 @@ export default function AdminPolicyLibraryClient() {
           showMenuButton
           className="bg-white/88"
         />
-        <DashboardMobileNav sections={permissionSections} />
+        <DashboardMobileNav variant="admin" />
 
         <div className="px-4 py-5 md:px-5">
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -455,20 +349,22 @@ export default function AdminPolicyLibraryClient() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value as "" | PolicyStatus)}
-                  className="h-10 rounded-xl border border-slate-200 bg-white pl-9 pr-9 text-sm font-semibold text-slate-700 outline-none"
-                >
-                  <option value="">All Status</option>
-                  <option value="DRAFT">Draft</option>
-                  <option value="UNDER_REVIEW">Under Review</option>
-                  <option value="PUBLISHED">Published</option>
-                  <option value="ARCHIVED">Archived</option>
-                </select>
-              </div>
+              <DropdownSelect
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as "" | PolicyStatus)}
+                options={[
+                  { value: "DRAFT", label: "Draft" },
+                  { value: "UNDER_REVIEW", label: "Under Review" },
+                  { value: "PUBLISHED", label: "Published" },
+                  { value: "ARCHIVED", label: "Archived" },
+                ]}
+                placeholder="All Status"
+                allowClear
+                leadingIcon={Filter}
+                size="sm"
+                className="min-w-[10rem]"
+                aria-label="Filter by status"
+              />
               <button
                 type="button"
                 onClick={exportPolicies}
@@ -479,11 +375,7 @@ export default function AdminPolicyLibraryClient() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setUploadForm({ ...defaultUploadForm, categoryId: categoryFilter });
-                  setSelectedFile(null);
-                  setShowUploadModal(true);
-                }}
+                onClick={() => setShowUploadModal(true)}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-[var(--color-active-menu)] to-[var(--color-hover)] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(37,99,235,0.18)]"
               >
                 <Upload className="h-4 w-4" />
@@ -522,18 +414,18 @@ export default function AdminPolicyLibraryClient() {
                 />
               </label>
 
-              <select
+              <DropdownSelect
                 value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
-                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none"
-              >
-                <option value="">All Categories</option>
-                {(data?.filters.categories ?? []).map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setCategoryFilter(value)}
+                options={(data?.filters.categories ?? []).map((category) => ({
+                  value: category.id,
+                  label: category.name,
+                }))}
+                placeholder="All Categories"
+                allowClear
+                className="min-w-[12rem]"
+                aria-label="Filter by category"
+              />
             </div>
 
             <div className="overflow-x-auto">
@@ -660,117 +552,16 @@ export default function AdminPolicyLibraryClient() {
         </div>
       </section>
 
-      {showUploadModal ? (
-        <Modal
-          title="Upload Policy"
-          description="Upload a new policy and associate it with a category from the database."
-          onClose={() => setShowUploadModal(false)}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold text-slate-500">Policy Title</label>
-              <input
-                value={uploadForm.title}
-                onChange={(event) => setUploadForm((current) => ({ ...current, title: event.target.value }))}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none"
-                placeholder="e.g. Information Security Policy"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold text-slate-500">Description</label>
-              <textarea
-                value={uploadForm.description}
-                onChange={(event) => setUploadForm((current) => ({ ...current, description: event.target.value }))}
-                className="mt-2 min-h-[100px] w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-800 outline-none"
-                placeholder="Summarize what this policy covers."
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500">Category</label>
-              <select
-                value={uploadForm.categoryId}
-                onChange={(event) => setUploadForm((current) => ({ ...current, categoryId: event.target.value }))}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none"
-              >
-                <option value="">Select category</option>
-                {(data?.filters.categories ?? []).map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name} ({category.code})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500">Department</label>
-              <input
-                value={uploadForm.department}
-                onChange={(event) => setUploadForm((current) => ({ ...current, department: event.target.value }))}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none"
-                placeholder="e.g. IT Department"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500">Type</label>
-              <select
-                value={uploadForm.type}
-                onChange={(event) => setUploadForm((current) => ({ ...current, type: event.target.value as PolicyType }))}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none"
-              >
-                <option value="POLICY">Policy</option>
-                <option value="GUIDELINE">Guideline</option>
-                <option value="PROCEDURE">Procedure</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500">Status</label>
-              <select
-                value={uploadForm.status}
-                onChange={(event) => setUploadForm((current) => ({ ...current, status: event.target.value as PolicyStatus }))}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none"
-              >
-                <option value="DRAFT">Draft</option>
-                <option value="UNDER_REVIEW">Under Review</option>
-                <option value="PUBLISHED">Published</option>
-                <option value="ARCHIVED">Archived</option>
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold text-slate-500">Policy File</label>
-              <label className="mt-2 flex min-h-[92px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center">
-                <Upload className="h-5 w-5 text-slate-400" />
-                <span className="mt-2 text-sm font-semibold text-slate-700">
-                  {selectedFile ? selectedFile.name : "Choose a file to upload"}
-                </span>
-                <span className="mt-1 text-xs text-slate-400">PDF, DOC, or DOCX</span>
-                <input
-                  type="file"
-                  accept=".pdf,.doc,.docx"
-                  className="hidden"
-                  onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={() => setShowUploadModal(false)}
-              className="h-11 rounded-xl border border-slate-200 px-4 font-semibold text-slate-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => void handleUploadSubmit()}
-              className="h-11 rounded-xl bg-gradient-to-r from-[var(--color-active-menu)] to-[var(--color-hover)] px-4 font-semibold text-white disabled:opacity-60"
-            >
-              {isSubmitting ? "Uploading..." : "Upload Policy"}
-            </button>
-          </div>
-        </Modal>
-      ) : null}
+      <UploadPolicyWizard
+        open={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        categories={data?.filters.categories ?? []}
+        departmentOptions={Array.from(
+          new Set((data?.data ?? []).map((policy) => policy.department).filter(Boolean)),
+        )}
+        onSaveDraft={(payload) => submitPolicyUpload(payload, "DRAFT")}
+        onPublish={(payload) => submitPolicyUpload(payload, "PUBLISHED")}
+      />
     </main>
   );
 }

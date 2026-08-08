@@ -5,28 +5,28 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  Role,
   RoleDefinitionType,
   type RoleDefinition,
   type RoleModulePermission,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  isModuleKey,
+  legacyModuleKeyMap,
+  moduleOrder,
+  hasAdminPortalAccess,
+  type ModuleKey,
+} from './permission-modules';
 
-const moduleOrder = [
-  'Dashboard',
-  'Policy Library',
-  'Categories',
-  'Users',
-  'Roles & Permissions',
-  'Acknowledgments',
-  'AI Assistant Analytics',
-  'Reports',
-  'Audit Logs',
-  'Company',
-  'Settings',
-  'Integrations',
-  'System Health',
-  'Backup & Restore',
-] as const;
+const deniedPermissionFlags = {
+  canView: false,
+  canCreate: false,
+  canEdit: false,
+  canDelete: false,
+  canApprove: false,
+  canPublish: false,
+} as const;
 
 type RoleWithPermissions = RoleDefinition & {
   permissions: RoleModulePermission[];
@@ -51,8 +51,17 @@ export class RolesPermissionsService {
       }),
     ]);
 
+    await Promise.all(roles.map((role) => this.syncRolePermissions(role.id)));
+
+    const refreshedRoles = await this.prisma.roleDefinition.findMany({
+      include: {
+        permissions: true,
+      },
+      orderBy: [{ type: 'asc' }, { name: 'asc' }],
+    });
+
     return {
-      data: roles.map((role) =>
+      data: refreshedRoles.map((role) =>
         this.toRoleSummary(
           role,
           users.filter((user) => user.roleTitle === role.name).length,
@@ -73,13 +82,26 @@ export class RolesPermissionsService {
       throw new NotFoundException(`Role ${roleId} was not found.`);
     }
 
-    const assignedUsers = await this.prisma.user.count({
-      where: {
-        roleTitle: role.name,
+    await this.syncRolePermissions(role.id);
+
+    const refreshedRole = await this.prisma.roleDefinition.findUnique({
+      where: { id: roleId },
+      include: {
+        permissions: true,
       },
     });
 
-    return this.toRoleDetail(role, assignedUsers);
+    if (!refreshedRole) {
+      throw new NotFoundException(`Role ${roleId} was not found.`);
+    }
+
+    const assignedUsers = await this.prisma.user.count({
+      where: {
+        roleTitle: refreshedRole.name,
+      },
+    });
+
+    return this.toRoleDetail(refreshedRole, assignedUsers);
   }
 
   async createRole(body: Record<string, unknown>) {
@@ -107,7 +129,9 @@ export class RolesPermissionsService {
           permissions: {
             create: moduleOrder.map((moduleKey) => ({
               moduleKey,
-              canView: moduleKey === 'Dashboard' || moduleKey === 'Policy Library',
+              canView:
+                moduleKey === 'Dashboard' ||
+                moduleKey === 'Policy Library',
               canCreate: false,
               canEdit: false,
               canDelete: false,
@@ -276,7 +300,7 @@ export class RolesPermissionsService {
   async updateViewPermission(roleId: string, body: Record<string, unknown>) {
     const moduleKey = this.readRequiredString(body.moduleKey, 'moduleKey');
 
-    if (!moduleOrder.includes(moduleKey as (typeof moduleOrder)[number])) {
+    if (!isModuleKey(moduleKey)) {
       throw new BadRequestException('moduleKey is not a supported module.');
     }
 
@@ -346,7 +370,7 @@ export class RolesPermissionsService {
         `permissions[${index}].moduleKey`,
       );
 
-      if (!moduleOrder.includes(moduleKey as (typeof moduleOrder)[number])) {
+      if (!isModuleKey(moduleKey)) {
         throw new BadRequestException(
           `permissions[${index}].moduleKey is not supported.`,
         );
@@ -409,26 +433,64 @@ export class RolesPermissionsService {
 
     const role = await this.prisma.roleDefinition.findUnique({
       where: { name: roleTitle },
-      include: {
-        permissions: true,
-      },
+      select: { id: true },
     });
 
     if (!role) {
       throw new NotFoundException(`Role title ${roleTitle} was not found.`);
     }
 
+    // Keep module keys current (e.g. Acknowledgement Management → Compliance Center).
+    await this.syncRolePermissions(role.id);
+
+    const syncedRole = await this.prisma.roleDefinition.findUnique({
+      where: { id: role.id },
+      include: {
+        permissions: true,
+      },
+    });
+
+    if (!syncedRole) {
+      throw new NotFoundException(`Role title ${roleTitle} was not found.`);
+    }
+
+    const viewModules = syncedRole.permissions
+      .filter((permission) => permission.canView)
+      .sort(
+        (left, right) =>
+          moduleOrder.indexOf(left.moduleKey as ModuleKey) -
+          moduleOrder.indexOf(right.moduleKey as ModuleKey),
+      )
+      .map((permission) => permission.moduleKey);
+
     return {
       roleTitle,
-      modules: role.permissions
-        .filter((permission) => permission.canView)
-        .sort(
-          (left, right) =>
-            moduleOrder.indexOf(left.moduleKey as (typeof moduleOrder)[number]) -
-            moduleOrder.indexOf(right.moduleKey as (typeof moduleOrder)[number]),
-        )
-        .map((permission) => permission.moduleKey),
+      modules: viewModules,
+      portal: hasAdminPortalAccess(viewModules) ? 'admin' : 'employee',
     };
+  }
+
+  async resolveLoginRedirect(roleTitle: string, fallbackRole: Role) {
+    const role = await this.prisma.roleDefinition.findUnique({
+      where: { name: roleTitle },
+      include: {
+        permissions: true,
+      },
+    });
+
+    if (!role) {
+      return fallbackRole === Role.EMPLOYEE
+        ? '/employee/dashboard'
+        : '/admin/dashboard';
+    }
+
+    const viewModules = role.permissions
+      .filter((permission) => permission.canView)
+      .map((permission) => permission.moduleKey);
+
+    return hasAdminPortalAccess(viewModules)
+      ? '/admin/dashboard'
+      : '/employee/dashboard';
   }
 
   async listRoleTitles() {
@@ -439,6 +501,7 @@ export class RolesPermissionsService {
         name: true,
         code: true,
         type: true,
+        description: true,
       },
     });
 
@@ -457,6 +520,75 @@ export class RolesPermissionsService {
       throw new BadRequestException(
         `roleTitle must match a role created in Roles & Permissions.`,
       );
+    }
+  }
+
+  private async syncRolePermissions(roleId: string) {
+    const permissions = await this.prisma.roleModulePermission.findMany({
+      where: { roleId },
+    });
+
+    for (const permission of permissions) {
+      const mappedKey = legacyModuleKeyMap[permission.moduleKey];
+
+      if (!mappedKey || mappedKey === permission.moduleKey) {
+        continue;
+      }
+
+      const target = permissions.find((item) => item.moduleKey === mappedKey);
+
+      if (target) {
+        if (permission.canView && !target.canView) {
+          await this.prisma.roleModulePermission.update({
+            where: { id: target.id },
+            data: { canView: true },
+          });
+        }
+
+        await this.prisma.roleModulePermission.delete({
+          where: { id: permission.id },
+        });
+      } else {
+        await this.prisma.roleModulePermission.update({
+          where: { id: permission.id },
+          data: { moduleKey: mappedKey },
+        });
+      }
+    }
+
+    const refreshed = await this.prisma.roleModulePermission.findMany({
+      where: { roleId },
+    });
+    const existingKeys = new Set(refreshed.map((permission) => permission.moduleKey));
+    const missingKeys = moduleOrder.filter((moduleKey) => !existingKeys.has(moduleKey));
+
+    if (missingKeys.length > 0) {
+      await this.prisma.roleModulePermission.createMany({
+        data: missingKeys.map((moduleKey) => ({
+          roleId,
+          moduleKey,
+          ...deniedPermissionFlags,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    const latest = await this.prisma.roleModulePermission.findMany({
+      where: { roleId },
+    });
+    const obsoleteKeys = latest
+      .map((permission) => permission.moduleKey)
+      .filter((moduleKey) => !isModuleKey(moduleKey));
+
+    if (obsoleteKeys.length > 0) {
+      await this.prisma.roleModulePermission.deleteMany({
+        where: {
+          roleId,
+          moduleKey: {
+            in: obsoleteKeys,
+          },
+        },
+      });
     }
   }
 

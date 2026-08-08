@@ -1,30 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Bookmark,
   BookOpenText,
   Bot,
+  Building2,
+  CalendarDays,
+  Clock3,
   Download,
-  FileAudio,
   FileText,
+  Headphones,
+  History,
   LoaderCircle,
+  Lock,
+  MoreHorizontal,
   PauseCircle,
   PlayCircle,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
-  Volume2,
+  Users,
 } from "lucide-react";
-import {
-  DashboardMobileNav,
-  DashboardPanel,
-  DashboardSidebar,
-  DashboardTopbar,
-  type DashboardNavSection,
-} from "../dashboard/primitives";
+import { DashboardTopbar } from "../dashboard/primitives";
+import { DashboardMobileNav, DashboardSidebar } from "../dashboard/dashboard-nav";
+import { getSessionUserIdentity } from "../dashboard/session";
 
 const DEFAULT_API_BASE_URL = "http://localhost:3001";
 const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
@@ -37,11 +40,9 @@ type PolicyAnalysisProvider = "OPENAI" | "LOCAL_FALLBACK";
 type PolicyReaderExperienceProps = {
   mode: "admin" | "employee";
   policyId: string;
-  sections: readonly DashboardNavSection[];
   profileName: string;
   profileRole: string;
   avatarText: string;
-  footer: ReactNode;
 };
 
 type PolicyRecord = {
@@ -91,6 +92,15 @@ type ChatMessage = {
   role: "assistant" | "user";
   content: string;
 };
+
+type WorkspaceTab = "summary" | "highlights" | "related" | "history";
+
+const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
+  { id: "summary", label: "Summary" },
+  { id: "highlights", label: "Key Highlights" },
+  { id: "related", label: "Related Policies" },
+  { id: "history", label: "Version History" },
+];
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -180,6 +190,176 @@ function formatDateTime(value: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function getPolicyWordCount(policy: PolicyRecord) {
+  return (policy.content ?? policy.summaryLong ?? policy.description ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+function getEstimatedReadingMinutes(policy: PolicyRecord) {
+  return Math.max(5, Math.min(45, Math.ceil(getPolicyWordCount(policy) / 200) || 12));
+}
+
+function getEstimatedPageCount(policy: PolicyRecord) {
+  return Math.max(3, Math.min(40, Math.ceil(getPolicyWordCount(policy) / 280) || 8));
+}
+
+type ReadingSignals = {
+  timeSpentSeconds: number;
+  scrollDepthPercent: number;
+  pagesViewed: number;
+  estimatedPages: number;
+  requiredActiveSeconds: number;
+};
+
+function computeReadingProgress(signals: ReadingSignals) {
+  const timeScore = Math.min(1, signals.timeSpentSeconds / signals.requiredActiveSeconds);
+  const scrollScore = Math.min(1, signals.scrollDepthPercent / 100);
+  const pagesScore = Math.min(1, signals.pagesViewed / signals.estimatedPages);
+
+  // Weighted blend: pages + scroll + engaged time.
+  const combined = timeScore * 0.35 + scrollScore * 0.3 + pagesScore * 0.35;
+  return Math.min(100, Math.round(combined * 100));
+}
+
+type PersistedReadingProgress = {
+  timeSpentSeconds: number;
+  scrollDepthPercent: number;
+  pagesViewed: number;
+  updatedAt: string;
+};
+
+function getReadingProgressStorageKey(policyId: string) {
+  return `hinora_reading_progress:${policyId}`;
+}
+
+function loadPersistedReadingProgress(policyId: string): PersistedReadingProgress | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getReadingProgressStorageKey(policyId));
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<PersistedReadingProgress>;
+
+    return {
+      timeSpentSeconds: Math.max(0, Number(parsed.timeSpentSeconds) || 0),
+      scrollDepthPercent: Math.min(100, Math.max(0, Number(parsed.scrollDepthPercent) || 0)),
+      pagesViewed: Math.max(0, Number(parsed.pagesViewed) || 0),
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedReadingProgress(policyId: string, progress: Omit<PersistedReadingProgress, "updatedAt">) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    const payload: PersistedReadingProgress = {
+      ...progress,
+      updatedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(getReadingProgressStorageKey(policyId), JSON.stringify(payload));
+  } catch {
+    // Ignore quota / private-mode write failures.
+  }
+}
+
+type RemoteReadingProgress = {
+  progressPercent: number;
+  pagesViewed: number;
+  scrollDepthPercent: number;
+  timeSpentSeconds: number;
+};
+
+async function fetchRemoteReadingProgress(policyId: string): Promise<RemoteReadingProgress | null> {
+  const identity = getSessionUserIdentity();
+
+  if (!identity) {
+    return null;
+  }
+
+  const params = new URLSearchParams();
+  if (identity.userId) {
+    params.set("userId", identity.userId);
+  }
+  if (identity.email) {
+    params.set("email", identity.email);
+  }
+
+  for (const apiBaseUrl of getApiBaseCandidates()) {
+    try {
+      const response = await fetch(`${apiBaseUrl}/reading-progress/${policyId}?${params.toString()}`);
+      if (!response.ok) {
+        continue;
+      }
+
+      const payload = (await response.json()) as { data?: RemoteReadingProgress | null };
+      return payload.data ?? null;
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+}
+
+async function persistRemoteReadingProgress(
+  policyId: string,
+  progress: RemoteReadingProgress & { progressPercent: number },
+) {
+  const identity = getSessionUserIdentity();
+
+  if (!identity) {
+    return;
+  }
+
+  const body = {
+    ...identity,
+    policyId,
+    progressPercent: progress.progressPercent,
+    pagesViewed: progress.pagesViewed,
+    scrollDepthPercent: progress.scrollDepthPercent,
+    timeSpentSeconds: progress.timeSpentSeconds,
+  };
+
+  for (const apiBaseUrl of getApiBaseCandidates()) {
+    try {
+      const response = await fetch(`${apiBaseUrl}/reading-progress`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Try next candidate.
+    }
+  }
 }
 
 function formatStatusLabel(status: PolicyStatus) {
@@ -377,11 +557,9 @@ function getListenModeText(policy: PolicyRecord, summaryHighlights: string[]) {
 export default function PolicyReaderExperience({
   mode,
   policyId,
-  sections,
   profileName,
   profileRole,
   avatarText,
-  footer,
 }: PolicyReaderExperienceProps) {
   const [policyResponse, setPolicyResponse] = useState<PolicyDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -392,6 +570,21 @@ export default function PolicyReaderExperience({
   const [questionInput, setQuestionInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [readingProgress, setReadingProgress] = useState(0);
+  const [pagesViewed, setPagesViewed] = useState(0);
+  const [scrollDepthPercent, setScrollDepthPercent] = useState(0);
+  const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>("summary");
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const documentViewerRef = useRef<HTMLDivElement | null>(null);
+  const readingSignalsRef = useRef({
+    timeSpentSeconds: 0,
+    scrollDepthPercent: 0,
+    pagesViewed: 0,
+    isDocumentInView: false,
+    isPointerOverDocument: false,
+  });
 
   const loadPolicy = useCallback(async () => {
     setIsLoading(true);
@@ -430,6 +623,13 @@ export default function PolicyReaderExperience({
 
   const summaryHighlights = useMemo(() => (policy ? getSummaryHighlights(policy) : []), [policy]);
   const suggestedQuestions = useMemo(() => (policy ? getSuggestedQuestions(policy) : []), [policy]);
+  const estimatedReadingMinutes = policy ? getEstimatedReadingMinutes(policy) : 12;
+  const estimatedPages = policy ? getEstimatedPageCount(policy) : 8;
+  const requiredActiveSeconds = Math.max(90, Math.round(estimatedReadingMinutes * 60 * 0.55));
+  const isReadingComplete = readingProgress >= 100;
+  const remainingMinutes = isReadingComplete
+    ? 0
+    : Math.max(1, Math.ceil(estimatedReadingMinutes * ((100 - readingProgress) / 100)));
 
   useEffect(() => {
     if (!policy) {
@@ -452,6 +652,293 @@ export default function PolicyReaderExperience({
       }
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setIsBookmarked(false);
+    setActiveWorkspaceTab("summary");
+    setSummaryExpanded(false);
+
+    const localSaved = loadPersistedReadingProgress(policyId);
+    const localTime = localSaved?.timeSpentSeconds ?? 0;
+    const localScroll = localSaved?.scrollDepthPercent ?? 0;
+    const localPages = localSaved?.pagesViewed ?? 0;
+
+    setTimeSpentSeconds(localTime);
+    setScrollDepthPercent(localScroll);
+    setPagesViewed(localPages);
+    setReadingProgress(0);
+    readingSignalsRef.current = {
+      timeSpentSeconds: localTime,
+      scrollDepthPercent: localScroll,
+      pagesViewed: localPages,
+      isDocumentInView: false,
+      isPointerOverDocument: false,
+    };
+
+    void (async () => {
+      const remote = await fetchRemoteReadingProgress(policyId);
+
+      if (cancelled || !remote) {
+        return;
+      }
+
+      const mergedTime = Math.max(localTime, remote.timeSpentSeconds);
+      const mergedScroll = Math.max(localScroll, remote.scrollDepthPercent);
+      const mergedPages = Math.max(localPages, remote.pagesViewed);
+
+      readingSignalsRef.current.timeSpentSeconds = mergedTime;
+      readingSignalsRef.current.scrollDepthPercent = mergedScroll;
+      readingSignalsRef.current.pagesViewed = mergedPages;
+
+      setTimeSpentSeconds(mergedTime);
+      setScrollDepthPercent(mergedScroll);
+      setPagesViewed(mergedPages);
+      savePersistedReadingProgress(policyId, {
+        timeSpentSeconds: mergedTime,
+        scrollDepthPercent: mergedScroll,
+        pagesViewed: mergedPages,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [policyId]);
+
+  useEffect(() => {
+    if (!policy) {
+      return;
+    }
+
+    const activePolicyId = policy.id;
+    const signals = readingSignalsRef.current;
+    const viewer = documentViewerRef.current;
+    let saveTimer: number | null = null;
+    let lastSavedSnapshot = "";
+    signals.pagesViewed = Math.min(estimatedPages, signals.pagesViewed);
+    signals.scrollDepthPercent = Math.min(100, signals.scrollDepthPercent);
+
+    function flushRemoteProgress(progressPercent: number) {
+      const snapshot = JSON.stringify({
+        progressPercent,
+        pagesViewed: signals.pagesViewed,
+        scrollDepthPercent: signals.scrollDepthPercent,
+        timeSpentSeconds: signals.timeSpentSeconds,
+      });
+
+      if (snapshot === lastSavedSnapshot) {
+        return;
+      }
+
+      lastSavedSnapshot = snapshot;
+      void persistRemoteReadingProgress(activePolicyId, {
+        progressPercent,
+        pagesViewed: signals.pagesViewed,
+        scrollDepthPercent: signals.scrollDepthPercent,
+        timeSpentSeconds: signals.timeSpentSeconds,
+      });
+    }
+
+    function scheduleRemoteSave(progressPercent: number) {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+
+      // Debounce DB writes while still keeping a local cache for instant restore.
+      saveTimer = window.setTimeout(() => {
+        flushRemoteProgress(progressPercent);
+      }, 2500);
+
+      if (progressPercent >= 100) {
+        if (saveTimer !== null) {
+          window.clearTimeout(saveTimer);
+          saveTimer = null;
+        }
+        flushRemoteProgress(progressPercent);
+      }
+    }
+
+    function publishProgress() {
+      const nextProgress = computeReadingProgress({
+        timeSpentSeconds: signals.timeSpentSeconds,
+        scrollDepthPercent: signals.scrollDepthPercent,
+        pagesViewed: signals.pagesViewed,
+        estimatedPages,
+        requiredActiveSeconds,
+      });
+
+      setReadingProgress((current) => (current === nextProgress ? current : nextProgress));
+      setPagesViewed((current) => (current === signals.pagesViewed ? current : signals.pagesViewed));
+      setScrollDepthPercent((current) =>
+        current === signals.scrollDepthPercent ? current : signals.scrollDepthPercent,
+      );
+      setTimeSpentSeconds((current) =>
+        current === signals.timeSpentSeconds ? current : signals.timeSpentSeconds,
+      );
+
+      savePersistedReadingProgress(activePolicyId, {
+        timeSpentSeconds: signals.timeSpentSeconds,
+        scrollDepthPercent: signals.scrollDepthPercent,
+        pagesViewed: signals.pagesViewed,
+      });
+      scheduleRemoteSave(nextProgress);
+    }
+
+    function updateScrollDepth() {
+      if (!viewer) {
+        return;
+      }
+
+      const rect = viewer.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || 1;
+      const visible = Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0);
+      const visibilityRatio = Math.max(0, Math.min(1, visible / Math.max(rect.height, 1)));
+
+      // How far the reader has been scrolled through relative to the page.
+      const traversed = Math.min(
+        1,
+        Math.max(0, (viewportHeight - rect.top) / Math.max(rect.height + viewportHeight * 0.35, 1)),
+      );
+
+      const nextScrollDepth = Math.max(
+        signals.scrollDepthPercent,
+        Math.round(Math.max(visibilityRatio * 35, traversed * 100)),
+      );
+
+      if (nextScrollDepth > signals.scrollDepthPercent) {
+        signals.scrollDepthPercent = nextScrollDepth;
+        const scrollPages = Math.max(
+          1,
+          Math.ceil((signals.scrollDepthPercent / 100) * estimatedPages),
+        );
+        signals.pagesViewed = Math.min(
+          estimatedPages,
+          Math.max(signals.pagesViewed, scrollPages),
+        );
+        publishProgress();
+      }
+    }
+
+    let wheelAccumulated = 0;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        signals.isDocumentInView = Boolean(entry?.isIntersecting && (entry.intersectionRatio ?? 0) > 0.2);
+        if (signals.isDocumentInView) {
+          updateScrollDepth();
+        }
+      },
+      { threshold: [0.2, 0.4, 0.6, 0.8] },
+    );
+
+    if (viewer) {
+      observer.observe(viewer);
+    }
+
+    function handleScroll() {
+      updateScrollDepth();
+    }
+
+    function handleWheel(event: WheelEvent) {
+      if (!signals.isDocumentInView && !signals.isPointerOverDocument) {
+        return;
+      }
+
+      if (event.deltaY <= 0) {
+        return;
+      }
+
+      // Accumulate wheel distance so page turns map to real reading movement.
+      wheelAccumulated += event.deltaY;
+      const pageThreshold = 420;
+      const pagesAdvanced = Math.floor(wheelAccumulated / pageThreshold);
+
+      if (pagesAdvanced > 0) {
+        wheelAccumulated -= pagesAdvanced * pageThreshold;
+        signals.pagesViewed = Math.min(estimatedPages, signals.pagesViewed + pagesAdvanced);
+        signals.scrollDepthPercent = Math.max(
+          signals.scrollDepthPercent,
+          Math.round((signals.pagesViewed / estimatedPages) * 100),
+        );
+        publishProgress();
+      }
+    }
+
+    function handleMouseMove(event: MouseEvent) {
+      if (!viewer) {
+        return;
+      }
+
+      const rect = viewer.getBoundingClientRect();
+      signals.isPointerOverDocument =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+    }
+
+    const engagementTimer = window.setInterval(() => {
+      const isTabVisible = document.visibilityState === "visible";
+      const isEngaged =
+        isTabVisible && (signals.isDocumentInView || signals.isPointerOverDocument);
+
+      if (!isEngaged) {
+        return;
+      }
+
+      signals.timeSpentSeconds += 1;
+
+      // While engaged with the document, gradually credit pages and scroll depth.
+      // This covers PDF iframe reading where wheel events do not bubble to the page.
+      if (signals.isPointerOverDocument || signals.isDocumentInView) {
+        const expectedPagesFromTime = Math.min(
+          estimatedPages,
+          Math.floor((signals.timeSpentSeconds / requiredActiveSeconds) * estimatedPages) + 1,
+        );
+        signals.pagesViewed = Math.min(
+          estimatedPages,
+          Math.max(signals.pagesViewed, expectedPagesFromTime),
+        );
+        signals.scrollDepthPercent = Math.max(
+          signals.scrollDepthPercent,
+          Math.round((signals.pagesViewed / estimatedPages) * 100),
+        );
+      }
+
+      publishProgress();
+    }, 1000);
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleScroll);
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    updateScrollDepth();
+    publishProgress();
+
+    return () => {
+      observer.disconnect();
+      window.clearInterval(engagementTimer);
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
+      window.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("mousemove", handleMouseMove);
+
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+
+      const finalProgress = computeReadingProgress({
+        timeSpentSeconds: signals.timeSpentSeconds,
+        scrollDepthPercent: signals.scrollDepthPercent,
+        pagesViewed: signals.pagesViewed,
+        estimatedPages,
+        requiredActiveSeconds,
+      });
+      flushRemoteProgress(finalProgress);
+    };
+  }, [policy, estimatedPages, requiredActiveSeconds]);
 
   function handleAskHinora(question: string) {
     if (!policy) {
@@ -503,12 +990,7 @@ export default function PolicyReaderExperience({
 
   return (
     <main className="grid min-h-screen bg-[#f4f7fb] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
-      <DashboardSidebar
-        className="bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.18),transparent_20%),linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)]"
-        sections={sections}
-        navClassName="flex-1"
-        footer={footer}
-      />
+      <DashboardSidebar variant={mode} />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
@@ -524,57 +1006,17 @@ export default function PolicyReaderExperience({
           showMenuButton
           className="bg-white/88"
         />
-        <DashboardMobileNav sections={sections} />
+        <DashboardMobileNav variant={mode} />
 
-        <div className="px-4 py-5 md:px-5">
-          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                <Link href={getLibraryHref(mode)} className="inline-flex items-center gap-1 font-semibold text-[var(--color-active-menu)]">
-                  <ArrowLeft className="h-4 w-4" />
-                  <span>Policy Library</span>
-                </Link>
-                <span>›</span>
-                <span>{policy?.title ?? "Reader"}</span>
-              </div>
-              <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">
-                {policy?.title ?? "Policy Reader"}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Read the selected document, ask Hinora questions, generate a quick summary, and listen to the policy.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {policy ? (
-                <a
-                  href={documentUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
-                >
-                  <Download className="h-4.5 w-4.5" />
-                  <span>Open Original</span>
-                </a>
-              ) : null}
-              {mode === "admin" ? (
-                <Link
-                  href="/admin/policy-management"
-                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white"
-                >
-                  <FileText className="h-4.5 w-4.5" />
-                  <span>Manage Policies</span>
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white"
-                >
-                  <ShieldCheck className="h-4.5 w-4.5" />
-                  <span>Acknowledge Policy</span>
-                </button>
-              )}
-            </div>
+        <div className="px-4 py-5 md:px-5 xl:px-6">
+          <div className="mb-2">
+            <Link
+              href={getLibraryHref(mode)}
+              className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-active-menu)]"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Policy Library</span>
+            </Link>
           </div>
 
           {errorMessage ? (
@@ -590,251 +1032,486 @@ export default function PolicyReaderExperience({
           ) : null}
 
           {!isLoading && policy ? (
-            <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="space-y-4">
-                <DashboardPanel title="Document Reader" className="p-0">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={cx("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", getStatusTone(policy.status))}>
-                        {formatStatusLabel(policy.status)}
-                      </span>
-                      <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                        {formatTypeLabel(policy.type)}
-                      </span>
-                      <span
-                        className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
-                        style={policy.category?.color ? { backgroundColor: `${policy.category.color}18`, color: policy.category.color } : undefined}
-                      >
-                        {policy.category?.name ?? "Uncategorized"}
-                      </span>
-                    </div>
-                    <div className="text-sm text-slate-500">
-                      Last updated {formatDateTime(policy.updatedAt)}
-                    </div>
-                  </div>
-
-                  {canPreviewPdf ? (
-                    <div className="bg-slate-100 p-4">
-                      <iframe
-                        title={`${policy.title} document preview`}
-                        src={`${documentUrl}#toolbar=0&navpanes=0`}
-                        className="h-[72vh] min-h-[620px] w-full rounded-2xl border border-slate-200 bg-white"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-[440px] flex-col items-center justify-center gap-4 bg-gradient-to-br from-slate-50 to-white px-6 py-10 text-center">
-                      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-[var(--color-active-menu)]">
-                        <BookOpenText className="h-7 w-7" />
-                      </div>
-                      <div className="max-w-xl">
-                        <h2 className="text-xl font-bold text-slate-900">Preview unavailable in-app</h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">
-                          This document can still be opened in a new tab. The reader workspace below remains available for summaries, metadata, Ask Hinora, and listen mode.
-                        </p>
-                      </div>
-                      <a
-                        href={documentUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white"
-                      >
-                        <ArrowRight className="h-4.5 w-4.5" />
-                        <span>Open Document</span>
-                      </a>
-                    </div>
-                  )}
-                </DashboardPanel>
-
-                <DashboardPanel title="Key Highlights" className="space-y-3">
-                  {summaryHighlights.map((highlight) => (
-                    <div key={highlight} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-                      {highlight}
-                    </div>
-                  ))}
-                </DashboardPanel>
-              </div>
-
-              <div className="space-y-4">
-                <DashboardPanel title="Generated Summary" className="space-y-4">
-                  <div className="flex items-start gap-3 rounded-2xl border border-violet-100 bg-violet-50/70 px-4 py-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-[var(--color-ai-accent)]">
-                      <Sparkles className="h-4.5 w-4.5" />
+            <div className="space-y-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <h1 className="text-[1.85rem] font-extrabold leading-tight tracking-tight text-slate-900 md:text-[2.1rem]">
+                    {policy.title}
+                  </h1>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-500">
+                    <span className={cx("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", getStatusTone(policy.status))}>
+                      {formatStatusLabel(policy.status)}
                     </span>
-                    <div className="text-sm leading-6 text-slate-600">
-                      <div className="font-semibold text-slate-900">Summary Ready</div>
-                      <div className="mt-1">
-                        {policy.analysisProvider === "OPENAI"
-                          ? "This summary was generated during ingestion using OpenAI and saved to the policy record for low-cost reuse."
-                          : policy.analysisProvider === "LOCAL_FALLBACK"
-                            ? "This summary was generated from extracted policy content without a live OpenAI call."
-                            : "Hinora will display the saved summary once policy analysis is available."}
-                      </div>
-                    </div>
+                    <span>Version {policy.version}</span>
+                    <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" />
+                    <span>Updated: {formatDate(policy.updatedAt)}</span>
+                    <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" />
+                    <span className="inline-flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5" />
+                      Assigned to: {policy.department}
+                    </span>
                   </div>
-                  {policy.summaryLong ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-600">
-                      {policy.summaryLong}
-                    </div>
-                  ) : null}
-                  <div className="space-y-2 text-sm leading-6 text-slate-600">
-                    {summaryHighlights.map((highlight) => (
-                      <p key={highlight}>{highlight}</p>
-                    ))}
-                  </div>
-                </DashboardPanel>
+                </div>
 
-                <DashboardPanel title="Ask Hinora" className="space-y-4">
-                  <div className="flex flex-wrap gap-2">
-                    {suggestedQuestions.map((question) => (
-                      <button
-                        key={question}
-                        type="button"
-                        onClick={() => handleAskHinora(question)}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600"
-                      >
-                        {question}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="max-h-[280px] space-y-3 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                    {chatMessages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={cx(
-                          "rounded-2xl px-3 py-3 text-sm leading-6",
-                          message.role === "assistant"
-                            ? "bg-white text-slate-600"
-                            : "ml-auto max-w-[90%] bg-[var(--color-active-menu)] text-white",
-                        )}
-                      >
-                        {message.content}
-                      </div>
-                    ))}
-                  </div>
-
-                  <form onSubmit={handleAskSubmit} className="space-y-3">
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-                        Your Question
-                      </span>
-                      <textarea
-                        value={questionInput}
-                        onChange={(event) => setQuestionInput(event.target.value)}
-                        rows={3}
-                        placeholder="Ask about the purpose, coverage, category, summary, or current status..."
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none transition focus:border-[var(--color-active-menu)]"
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] text-sm font-semibold text-white"
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  {mode === "admin" ? (
+                    <Link
+                      href="/admin/policy-management"
+                      className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold !text-white"
                     >
-                      <Bot className="h-4.5 w-4.5" />
-                      <span>Ask Hinora</span>
+                      <FileText className="h-4.5 w-4.5" />
+                      <span>Manage Policy</span>
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!isReadingComplete}
+                      title={
+                        isReadingComplete
+                          ? "Start compliance for this policy"
+                          : "Finish reading the policy to unlock Start Compliance"
+                      }
+                      className={cx(
+                        "inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition",
+                        isReadingComplete
+                          ? "bg-[var(--color-active-menu)] text-white"
+                          : "cursor-not-allowed bg-slate-200 text-slate-500",
+                      )}
+                    >
+                      {isReadingComplete ? (
+                        <ShieldCheck className="h-4.5 w-4.5" />
+                      ) : (
+                        <Lock className="h-4.5 w-4.5" />
+                      )}
+                      <span>Start Compliance</span>
                     </button>
-                  </form>
-                </DashboardPanel>
-
-                <DashboardPanel title="Listen Mode" className="space-y-4">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-                    Listen mode is intended to read the whole policy aloud. When extracted policy text is available, playback uses the full document content instead of only the generated summary.
-                  </div>
+                  )}
                   <button
                     type="button"
-                    onClick={handleToggleListenMode}
+                    onClick={() => setIsBookmarked((current) => !current)}
+                    aria-label={isBookmarked ? "Remove bookmark" : "Add bookmark"}
                     className={cx(
-                      "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white",
-                      isSpeaking ? "bg-slate-900" : "bg-[var(--color-ai-accent)]",
+                      "inline-flex h-11 w-11 items-center justify-center rounded-xl border transition",
+                      isBookmarked
+                        ? "border-amber-200 bg-amber-50 text-[var(--color-warning)]"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                     )}
                   >
-                    {isSpeaking ? <PauseCircle className="h-4.5 w-4.5" /> : <PlayCircle className="h-4.5 w-4.5" />}
-                    <span>{isSpeaking ? "Stop Audio" : "Start Listen Mode"}</span>
+                    <Bookmark className={cx("h-4.5 w-4.5", isBookmarked && "fill-current")} />
                   </button>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="flex items-center gap-2 font-semibold text-slate-900">
-                        <FileAudio className="h-4.5 w-4.5 text-[var(--color-ai-accent)]" />
-                        <span>Full Policy Audio</span>
+                  <button
+                    type="button"
+                    aria-label="More actions"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  >
+                    <MoreHorizontal className="h-4.5 w-4.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="min-w-0 space-y-4">
+                  <div
+                    ref={documentViewerRef}
+                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                  >
+                    {canPreviewPdf ? (
+                      <iframe
+                        title={`${policy.title} document preview`}
+                        src={`${documentUrl}#toolbar=1&navpanes=0`}
+                        className="h-[min(70vh,820px)] min-h-[560px] w-full bg-slate-900"
+                      />
+                    ) : (
+                      <div className="flex min-h-[520px] flex-col items-center justify-center gap-4 bg-gradient-to-br from-slate-50 to-white px-6 py-10 text-center">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-[var(--color-active-menu)]">
+                          <BookOpenText className="h-7 w-7" />
+                        </div>
+                        <div className="max-w-xl">
+                          <h2 className="text-xl font-bold text-slate-900">Preview unavailable in-app</h2>
+                          <p className="mt-2 text-sm leading-6 text-slate-500">
+                            Use Download PDF in the tools sidebar to open the original file.
+                          </p>
+                        </div>
+                        <a
+                          href={documentUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold !text-white"
+                        >
+                          <Download className="h-4.5 w-4.5" />
+                          <span>Open Document</span>
+                        </a>
                       </div>
-                      <div className="mt-1 text-slate-500">Reads the entire extracted policy text when available.</div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="flex items-center gap-2 font-semibold text-slate-900">
-                        <Volume2 className="h-4.5 w-4.5 text-[var(--color-active-menu)]" />
-                        <span>Browser Voice</span>
+                    )}
+                    <div className="border-t border-slate-200 px-4 py-3">
+                      <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
+                        <span>{readingProgress}% read</span>
+                        <span>
+                          {isReadingComplete
+                            ? "Reading complete"
+                            : `Page ${Math.max(1, pagesViewed)} / ${estimatedPages} · ~${remainingMinutes} min left`}
+                        </span>
                       </div>
-                      <div className="mt-1 text-slate-500">Uses your browser speech engine.</div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={cx(
+                            "h-full rounded-full transition-all duration-500",
+                            isReadingComplete ? "bg-emerald-500" : "bg-sky-400",
+                          )}
+                          style={{ width: `${readingProgress}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </DashboardPanel>
 
-                <DashboardPanel title="Policy Details" className="space-y-3">
-                  <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Department</div>
-                      <div className="mt-1 font-semibold text-slate-900">{policy.department}</div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Version</div>
-                      <div className="mt-1 font-semibold text-slate-900">v{policy.version}</div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Owner</div>
-                      <div className="mt-1 font-semibold text-slate-900">{policy.createdBy}</div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Document</div>
-                      <div className="mt-1 font-semibold text-slate-900">{policy.fileName}</div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">AI Analysis</div>
-                      <div className="mt-1 font-semibold text-slate-900">
-                        {policy.analysisStatus === "IN_PROGRESS"
-                          ? "Analyzing"
-                          : policy.analysisStatus === "NOT_STARTED"
-                            ? "Not Started"
-                            : policy.analysisStatus.charAt(0) + policy.analysisStatus.slice(1).toLowerCase()}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {policy.analysisProvider === "OPENAI"
-                          ? "OpenAI"
-                          : policy.analysisProvider === "LOCAL_FALLBACK"
-                            ? "Local fallback"
-                            : "Not available yet"}
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-200 px-4">
+                      <div className="flex gap-1 overflow-x-auto">
+                        {workspaceTabs.map((tab) => {
+                          const active = activeWorkspaceTab === tab.id;
+
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              onClick={() => setActiveWorkspaceTab(tab.id)}
+                              className={cx(
+                                "relative shrink-0 px-3.5 py-3.5 text-sm font-semibold transition",
+                                active
+                                  ? "text-[var(--color-active-menu)]"
+                                  : "text-slate-500 hover:text-slate-700",
+                              )}
+                            >
+                              {tab.label}
+                              {active ? (
+                                <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-[var(--color-active-menu)]" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                  </div>
-                  {policy.analysisError ? (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-[var(--color-error)]">
-                      {policy.analysisError}
-                    </div>
-                  ) : null}
-                </DashboardPanel>
 
-                <DashboardPanel title="Related Policies" className="space-y-3">
-                  {relatedPolicies.length > 0 ? (
-                    relatedPolicies.map((relatedPolicy) => (
-                      <Link
-                        key={relatedPolicy.id}
-                        href={getReaderHref(mode, relatedPolicy.id)}
-                        className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[var(--color-active-menu)]/30 hover:bg-slate-50"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate font-semibold text-slate-900">{relatedPolicy.title}</div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {formatTypeLabel(relatedPolicy.type)} • {formatStatusLabel(relatedPolicy.status)}
+                    <div className="px-5 py-5">
+                      {activeWorkspaceTab === "summary" ? (
+                        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.9fr)]">
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900">Executive Summary</h3>
+                            <p
+                              className={cx(
+                                "mt-3 text-sm leading-7 text-slate-600",
+                                !summaryExpanded && "line-clamp-5",
+                              )}
+                            >
+                              {policy.summaryLong ||
+                                policy.summaryShort ||
+                                policy.description ||
+                                summaryHighlights.join(" ") ||
+                                "No executive summary is available for this policy yet."}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setSummaryExpanded((current) => !current)}
+                              className="mt-3 text-sm font-semibold text-[var(--color-active-menu)]"
+                            >
+                              {summaryExpanded ? "Show less" : "Show more"}
+                            </button>
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-400">
+                                <Clock3 className="h-3.5 w-3.5" />
+                                Reading Time
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-slate-900">
+                                {estimatedReadingMinutes} min
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-400">
+                                <CalendarDays className="h-3.5 w-3.5" />
+                                Effective Date
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-slate-900">
+                                {formatDate(policy.updatedAt)}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-400">
+                                <Building2 className="h-3.5 w-3.5" />
+                                Departments
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-slate-900">
+                                {policy.department}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-400">
+                                <Users className="h-3.5 w-3.5" />
+                                Policy Owner
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-slate-900">
+                                {policy.createdBy}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-400">
+                                <History className="h-3.5 w-3.5" />
+                                Review Cycle
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-slate-900">Annually</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-400">
+                                <ShieldAlert className="h-3.5 w-3.5" />
+                                Risk Level
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-[var(--color-error)]">
+                                {policy.category?.name?.toLowerCase().includes("security") ||
+                                policy.category?.name?.toLowerCase().includes("risk")
+                                  ? "High"
+                                  : "Medium"}
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <ArrowRight className="h-4.5 w-4.5 text-slate-400" />
-                      </Link>
-                    ))
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                      No related policies found yet for this category.
+                      ) : null}
+
+                      {activeWorkspaceTab === "highlights" ? (
+                        summaryHighlights.length > 0 ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {summaryHighlights.map((highlight) => (
+                              <div
+                                key={highlight}
+                                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600"
+                              >
+                                {highlight}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                            No key highlights are available for this policy yet.
+                          </div>
+                        )
+                      ) : null}
+
+                      {activeWorkspaceTab === "related" ? (
+                        relatedPolicies.length > 0 ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {relatedPolicies.map((relatedPolicy) => (
+                              <Link
+                                key={relatedPolicy.id}
+                                href={getReaderHref(mode, relatedPolicy.id)}
+                                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[var(--color-active-menu)]/30 hover:bg-slate-50"
+                              >
+                                <div className="min-w-0">
+                                  <div className="truncate font-semibold text-slate-900">{relatedPolicy.title}</div>
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {formatTypeLabel(relatedPolicy.type)} • {formatStatusLabel(relatedPolicy.status)}
+                                  </div>
+                                </div>
+                                <ArrowRight className="h-4.5 w-4.5 shrink-0 text-slate-400" />
+                              </Link>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                            No related policies found yet for this category.
+                          </div>
+                        )
+                      ) : null}
+
+                      {activeWorkspaceTab === "history" ? (
+                        <div className="space-y-3">
+                          <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                              <History className="h-4.5 w-4.5" />
+                            </span>
+                            <div className="min-w-0 flex-1 text-sm leading-6 text-slate-600">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="font-semibold text-slate-900">Version {policy.version} (current)</div>
+                                <span className={cx("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", getStatusTone(policy.status))}>
+                                  {formatStatusLabel(policy.status)}
+                                </span>
+                              </div>
+                              <div className="mt-1">
+                                Updated {formatDateTime(policy.updatedAt)} by {policy.createdBy}
+                              </div>
+                              <div className="mt-1 text-slate-500">File: {policy.fileName}</div>
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                            Older versions will appear here as new revisions are published.
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
-                  )}
-                </DashboardPanel>
+                  </div>
+                </div>
+
+                <aside className="space-y-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-[var(--color-active-menu)]">
+                        <Bot className="h-4 w-4" />
+                      </span>
+                      <div className="text-sm font-bold text-slate-900">Ask Hinora</div>
+                    </div>
+
+                    <div className="max-h-[180px] space-y-2.5 overflow-y-auto rounded-xl bg-slate-50 px-3 py-3">
+                      {chatMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={cx(
+                            "rounded-xl px-3 py-2.5 text-sm leading-6",
+                            message.role === "assistant"
+                              ? "bg-white text-slate-600"
+                              : "ml-auto max-w-[92%] bg-[var(--color-active-menu)] text-white",
+                          )}
+                        >
+                          {message.content}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-3">
+                      <div className="mb-2 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-slate-400">
+                        Suggested questions
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {suggestedQuestions.slice(0, 3).map((question) => (
+                          <button
+                            key={question}
+                            type="button"
+                            onClick={() => handleAskHinora(question)}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-left text-xs font-semibold text-slate-600"
+                          >
+                            {question}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleAskSubmit} className="mt-3 flex gap-2">
+                      <input
+                        type="text"
+                        value={questionInput}
+                        onChange={(event) => setQuestionInput(event.target.value)}
+                        placeholder="Ask a question..."
+                        className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-[var(--color-active-menu)]"
+                      />
+                      <button
+                        type="submit"
+                        aria-label="Ask Hinora"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-active-menu)] text-white"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-50 text-[var(--color-ai-accent)]">
+                        <Headphones className="h-4 w-4" />
+                      </span>
+                      <div className="text-sm font-bold text-slate-900">Listen Mode</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleListenMode}
+                      className={cx(
+                        "inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white",
+                        isSpeaking ? "bg-slate-900" : "bg-[var(--color-ai-accent)]",
+                      )}
+                    >
+                      {isSpeaking ? <PauseCircle className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
+                      <span>{isSpeaking ? "Stop Audio" : "Start Listen Mode"}</span>
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="text-sm font-bold text-slate-900">Reading Progress</div>
+                    <div className="mt-3 flex items-center justify-between text-sm">
+                      <span className="font-semibold text-slate-800">{readingProgress}% completed</span>
+                      <span className="text-slate-500">
+                        {isReadingComplete ? "Ready" : `~${remainingMinutes} min left`}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={cx(
+                          "h-full rounded-full transition-all duration-500",
+                          isReadingComplete ? "bg-emerald-500" : "bg-[var(--color-active-menu)]",
+                        )}
+                        style={{ width: `${readingProgress}%` }}
+                      />
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[0.7rem] font-semibold text-slate-500">
+                      <div className="rounded-xl bg-slate-50 px-2 py-2">
+                        <div className="text-slate-900">{Math.max(1, pagesViewed)}/{estimatedPages}</div>
+                        <div className="mt-0.5">Pages</div>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-2 py-2">
+                        <div className="text-slate-900">{scrollDepthPercent}%</div>
+                        <div className="mt-0.5">Scroll</div>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-2 py-2">
+                        <div className="text-slate-900">
+                          {Math.min(100, Math.round((timeSpentSeconds / requiredActiveSeconds) * 100))}%
+                        </div>
+                        <div className="mt-0.5">Time</div>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs leading-5 text-slate-500">
+                      {isReadingComplete
+                        ? "Reading complete. Start Compliance is unlocked."
+                        : "Progress updates from pages viewed, scroll depth, and time spent on the document."}
+                    </p>
+                    {mode === "employee" ? (
+                      <button
+                        type="button"
+                        disabled={!isReadingComplete}
+                        className={cx(
+                          "mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold transition",
+                          isReadingComplete
+                            ? "bg-[var(--color-active-menu)] text-white"
+                            : "cursor-not-allowed bg-slate-200 text-slate-500",
+                        )}
+                      >
+                        {isReadingComplete ? (
+                          <ShieldCheck className="h-4 w-4" />
+                        ) : (
+                          <Lock className="h-4 w-4" />
+                        )}
+                        <span>Start Compliance</span>
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setIsBookmarked((current) => !current)}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <Bookmark className={cx("h-4.5 w-4.5", isBookmarked && "fill-current text-[var(--color-warning)]")} />
+                      <span>{isBookmarked ? "Bookmarked" : "Add Bookmark"}</span>
+                    </button>
+                    <a
+                      href={documentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={policy.fileName}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <Download className="h-4.5 w-4.5" />
+                      <span>Download PDF</span>
+                    </a>
+                  </div>
+                </aside>
               </div>
             </div>
           ) : null}

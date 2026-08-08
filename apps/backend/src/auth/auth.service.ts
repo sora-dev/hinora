@@ -4,15 +4,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Role, UserStatus } from '@prisma/client';
+import { UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { RolesPermissionsService } from '../roles-permissions/roles-permissions.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly rolesPermissionsService: RolesPermissionsService,
   ) {}
 
   async login(body: Record<string, unknown>) {
@@ -45,8 +47,10 @@ export class AuthService {
       );
     }
 
-    const redirectTo =
-      user.role === Role.EMPLOYEE ? '/employee/dashboard' : '/admin/dashboard';
+    const redirectTo = await this.rolesPermissionsService.resolveLoginRedirect(
+      user.roleTitle,
+      user.role,
+    );
 
     const updatedUser = await this.prisma.user.update({
       where: { id: user.id },
@@ -75,6 +79,7 @@ export class AuthService {
         role: updatedUser.role,
         roleTitle: updatedUser.roleTitle,
         status: updatedUser.status,
+        mustChangePassword: updatedUser.mustChangePassword,
         lastLoginAt: updatedUser.lastLoginAt,
       },
       redirectTo,

@@ -16,6 +16,7 @@ type CreateUserInput = {
   firstName: string;
   lastName: string;
   department: string;
+  jobTitle?: string | null;
   role: Role;
   roleTitle: string;
   status: UserStatus;
@@ -121,9 +122,14 @@ export class UsersService {
           firstName: input.firstName,
           lastName: input.lastName,
           department: input.department,
+          jobTitle: input.jobTitle ?? null,
           role: input.role,
           roleTitle: input.roleTitle,
           status: input.status,
+          mustChangePassword:
+            typeof body.mustChangePassword === 'boolean'
+              ? body.mustChangePassword
+              : true,
         },
       });
 
@@ -191,14 +197,29 @@ export class UsersService {
 
   async updatePassword(id: string, body: Record<string, unknown>) {
     await this.ensureUserExists(id);
-    const password = this.readRequiredString(body.password, 'password', {
-      minLength: 6,
-    });
+    const password = this.readSecurePassword(body.password, 'password');
+    const mustChangePassword =
+      typeof body.mustChangePassword === 'boolean'
+        ? body.mustChangePassword
+        : true;
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    const data: {
+      password: string;
+      mustChangePassword: boolean;
+      status?: UserStatus;
+    } = {
+      password: hashedPassword,
+      mustChangePassword,
+    };
+
+    if (body.unlockAccount === true) {
+      data.status = UserStatus.ACTIVE;
+    }
 
     const user = await this.prisma.user.update({
       where: { id },
-      data: { password: hashedPassword },
+      data,
     });
 
     return this.toUserResponse(user);
@@ -213,9 +234,11 @@ export class UsersService {
       lastName: user.lastName,
       fullName: `${user.firstName} ${user.lastName}`.trim(),
       department: user.department,
+      jobTitle: user.jobTitle,
       role: user.role,
       roleTitle: user.roleTitle,
       status: user.status,
+      mustChangePassword: user.mustChangePassword,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -231,17 +254,18 @@ export class UsersService {
   }
 
   private parseCreateInput(body: Record<string, unknown>): CreateUserInput {
+    const roleTitle = this.readRequiredString(body.roleTitle, 'roleTitle');
+
     return {
       email: this.readRequiredEmail(body.email),
       username: this.readRequiredString(body.username, 'username'),
-      password: this.readRequiredString(body.password, 'password', {
-        minLength: 6,
-      }),
+      password: this.readSecurePassword(body.password, 'password'),
       firstName: this.readRequiredString(body.firstName, 'firstName'),
       lastName: this.readRequiredString(body.lastName, 'lastName'),
       department: this.readRequiredString(body.department, 'department'),
-      role: this.parseRequiredRole(body.role),
-      roleTitle: this.readRequiredString(body.roleTitle, 'roleTitle'),
+      jobTitle: this.parseOptionalJobTitle(body.jobTitle),
+      role: this.parseOptionalRole(body.role) ?? this.deriveSystemRole(roleTitle),
+      roleTitle,
       status: this.parseRequiredStatus(body.status),
     };
   }
@@ -269,12 +293,19 @@ export class UsersService {
       input.department = this.readRequiredString(body.department, 'department');
     }
 
-    if (body.role !== undefined) {
-      input.role = this.parseRequiredRole(body.role);
+    if (body.jobTitle !== undefined) {
+      input.jobTitle = this.parseOptionalJobTitle(body.jobTitle) ?? null;
     }
 
     if (body.roleTitle !== undefined) {
       input.roleTitle = this.readRequiredString(body.roleTitle, 'roleTitle');
+      if (body.role === undefined) {
+        input.role = this.deriveSystemRole(input.roleTitle);
+      }
+    }
+
+    if (body.role !== undefined) {
+      input.role = this.parseRequiredRole(body.role);
     }
 
     if (body.status !== undefined) {
@@ -282,6 +313,43 @@ export class UsersService {
     }
 
     return input;
+  }
+
+  private deriveSystemRole(roleTitle: string): Role {
+    const normalized = roleTitle.trim().toLowerCase();
+    if (normalized.includes('admin')) {
+      return Role.ADMIN;
+    }
+    if (
+      normalized.includes('manager') ||
+      normalized.includes('officer') ||
+      normalized.includes('head') ||
+      normalized.includes('compliance')
+    ) {
+      return Role.MANAGER;
+    }
+    return Role.EMPLOYEE;
+  }
+
+  private parseOptionalRole(value: unknown) {
+    if (typeof value !== 'string' || !value.trim()) {
+      return undefined;
+    }
+
+    try {
+      return this.parseRequiredRole(value);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private parseOptionalJobTitle(value: unknown) {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   }
 
   private parsePositiveInt(value: string | undefined, fallback: number) {
@@ -365,6 +433,25 @@ export class UsersService {
     }
 
     return normalized;
+  }
+
+  private readSecurePassword(value: unknown, fieldName: string) {
+    const password = this.readRequiredString(value, fieldName, {
+      minLength: 8,
+    });
+
+    const hasLower = /[a-z]/.test(password);
+    const hasUpper = /[A-Z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+
+    if (!hasLower || !hasUpper || !hasNumber || !hasSpecial) {
+      throw new BadRequestException(
+        `${fieldName} must include uppercase, lowercase, a number, and a special character.`,
+      );
+    }
+
+    return password;
   }
 
   private handlePrismaError(error: unknown): never {

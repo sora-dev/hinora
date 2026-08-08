@@ -3,12 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  Activity,
-  BadgeCheck,
-  Bot,
-  Building2,
   CalendarDays,
-  ChartColumn,
   ChevronDown,
   ChevronRight,
   CircleHelp,
@@ -16,31 +11,30 @@ import {
   FileText,
   Files,
   FolderTree,
-  HardDrive,
-  LayoutDashboard,
   MoreVertical,
   Pencil,
   Plus,
   Search,
-  Settings2,
   ShieldCheck,
   Trash2,
   Users,
-  Workflow,
-  ClipboardList,
   ArrowRight,
   ArrowLeftRight,
   Power,
 } from "lucide-react";
 import {
-  DashboardMobileNav,
   DashboardPanel,
-  DashboardSidebar,
   DashboardStatCard,
   DashboardTopbar,
-  type DashboardNavSection,
 } from "../../../components/dashboard/primitives";
-import { useSidebarPermissions } from "../../../components/dashboard/use-sidebar-permissions";
+import {
+  DashboardMobileNav,
+  DashboardSidebar,
+} from "../../../components/dashboard/dashboard-nav";
+import {
+  DropdownSelect,
+  type DropdownOption,
+} from "../../../components/ui/dropdown-select";
 
 type CategoryStatus = "ACTIVE" | "INACTIVE";
 
@@ -87,34 +81,6 @@ type CategoryDetailResponse = {
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
-
-const sidebarSections: readonly DashboardNavSection[] = [
-  {
-    label: "MAIN",
-    items: [
-      { label: "Dashboard", Icon: LayoutDashboard, href: "/admin/dashboard" },
-      { label: "Policy Management", Icon: Files, href: "/admin/policy-management" },
-      { label: "Policy Library", Icon: Files, href: "/admin/policy-library" },
-      { label: "Categories", Icon: FolderTree, href: "/admin/categories", active: true },
-      { label: "Users", Icon: Users, href: "/admin/users" },
-      { label: "Roles & Permissions", Icon: ShieldCheck, href: "/admin/roles-permissions" },
-      { label: "Acknowledgments", Icon: BadgeCheck, href: "#" },
-      { label: "AI Assistant Analytics", Icon: Bot, href: "#" },
-      { label: "Reports", Icon: ChartColumn, href: "#" },
-      { label: "Audit Logs", Icon: ClipboardList, href: "#" },
-    ],
-  },
-  {
-    label: "SYSTEM",
-    items: [
-      { label: "Company", Icon: Building2, href: "#" },
-      { label: "Settings", Icon: Settings2, href: "#" },
-      { label: "Integrations", Icon: Workflow, href: "#" },
-      { label: "System Health", Icon: Activity, href: "#" },
-      { label: "Backup & Restore", Icon: HardDrive, href: "#" },
-    ],
-  },
-];
 
 const categoryTree: CategoryNode[] = [
   {
@@ -293,7 +259,7 @@ const categoryTree: CategoryNode[] = [
     id: "operations",
     name: "Operations",
     code: "OPS",
-    description: "Branch and back-office operating procedures categories.",
+    description: "Location and back-office operating procedures categories.",
     parentId: null,
     status: "ACTIVE",
     color: "#22C55E",
@@ -409,10 +375,10 @@ const categoryTree: CategoryNode[] = [
     children: [],
   },
   {
-    id: "branch-operations",
-    name: "Branch Operations",
-    code: "BR",
-    description: "Branch and teller operations categories.",
+    id: "location-operations",
+    name: "Location Operations",
+    code: "LOC",
+    description: "Location and teller operations categories.",
     parentId: null,
     status: "ACTIVE",
     color: "#F97316",
@@ -513,6 +479,11 @@ function statusBadge(status: CategoryStatus) {
   return status === "ACTIVE" ? "bg-emerald-50 text-[var(--color-success)]" : "bg-amber-50 text-[var(--color-warning)]";
 }
 
+const categoryStatusOptions: DropdownOption<CategoryStatus>[] = [
+  { value: "ACTIVE", label: "Active", badgeClassName: "bg-emerald-50 text-[var(--color-success)]" },
+  { value: "INACTIVE", label: "Inactive", badgeClassName: "bg-amber-50 text-[var(--color-warning)]" },
+];
+
 function statusDot(status: CategoryStatus) {
   return status === "ACTIVE" ? "bg-emerald-500" : "bg-amber-500";
 }
@@ -588,7 +559,6 @@ const inputClassName =
   "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[var(--color-active-menu)]/60 focus:ring-4 focus:ring-blue-500/10";
 
 export default function AdminCategoriesClient() {
-  const permissionSections = useSidebarPermissions(sidebarSections);
   const [categoriesData, setCategoriesData] = useState<CategoryNode[]>([...categoryTree]);
   const [statusFilter, setStatusFilter] = useState<"ALL" | CategoryStatus>("ALL");
   const [treeSearch, setTreeSearch] = useState("");
@@ -915,10 +885,7 @@ export default function AdminCategoriesClient() {
   if (!selectedCategory && !isLoading) {
     return (
       <main className="grid min-h-screen bg-[#f4f7fb] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
-        <DashboardSidebar
-          className="bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.18),transparent_20%),linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)]"
-          sections={permissionSections}
-        />
+        <DashboardSidebar variant="admin" />
         <section className="flex min-w-0 flex-col">
           <DashboardTopbar
             searchPlaceholder="Search categories, policies, or departments..."
@@ -932,7 +899,7 @@ export default function AdminCategoriesClient() {
             showMenuButton
             className="bg-white/88"
           />
-          <DashboardMobileNav sections={permissionSections} />
+          <DashboardMobileNav variant="admin" />
           <div className="px-4 py-8 md:px-5">
             <DashboardPanel title="Categories">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
@@ -1004,21 +971,7 @@ export default function AdminCategoriesClient() {
 
   return (
     <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
-      <DashboardSidebar
-        className="bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.18),transparent_20%),linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)]"
-        sections={permissionSections}
-        footer={
-          <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/6 p-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
-              <Building2 className="h-4.5 w-4.5" />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-white">Rural Bank of Itogon</div>
-              <div className="text-[0.8rem] text-white/70">Enterprise Plan</div>
-            </div>
-          </div>
-        }
-      />
+      <DashboardSidebar variant="admin" />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
@@ -1032,7 +985,7 @@ export default function AdminCategoriesClient() {
           avatarClassName="from-[var(--color-active-menu)] to-[var(--color-hover)]"
           showMenuButton
         />
-        <DashboardMobileNav sections={permissionSections} />
+        <DashboardMobileNav variant="admin" />
 
         <div className="px-4 py-5 md:px-5">
           {errorMessage ? (
@@ -1455,14 +1408,15 @@ export default function AdminCategoriesClient() {
             </div>
             <div>
               <label className="text-xs font-bold text-slate-500">Status</label>
-              <select
+              <DropdownSelect
                 value={formState.status}
-                onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as CategoryStatus }))}
-                className={inputClassName}
-              >
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
+                onChange={(value) => {
+                  if (value) setFormState((current) => ({ ...current, status: value as CategoryStatus }));
+                }}
+                options={categoryStatusOptions}
+                allowClear={false}
+                aria-label="Status"
+              />
             </div>
             <div className="sm:col-span-2">
               <label className="text-xs font-bold text-slate-500">Description</label>
@@ -1536,14 +1490,15 @@ export default function AdminCategoriesClient() {
             </div>
             <div>
               <label className="text-xs font-bold text-slate-500">Status</label>
-              <select
+              <DropdownSelect
                 value={formState.status}
-                onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as CategoryStatus }))}
-                className={inputClassName}
-              >
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
+                onChange={(value) => {
+                  if (value) setFormState((current) => ({ ...current, status: value as CategoryStatus }));
+                }}
+                options={categoryStatusOptions}
+                allowClear={false}
+                aria-label="Status"
+              />
             </div>
             <div className="sm:col-span-2">
               <label className="text-xs font-bold text-slate-500">Description</label>

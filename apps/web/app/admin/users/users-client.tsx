@@ -3,45 +3,50 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
-  Activity,
-  BadgeCheck,
-  Bot,
+  AtSign,
   BookOpenText,
+  Briefcase,
   Building2,
+  CheckCircle2,
+  CircleDot,
   CircleHelp,
+  Clock3,
   Eye,
-  Files,
+  EyeOff,
   Filter,
-  FolderTree,
   Import,
+  Info,
   KeyRound,
-  LayoutDashboard,
   Lock,
+  Mail,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
-  Settings2,
+  Shield,
   ShieldCheck,
   Unlock,
   UserPlus,
-  Users,
+  UserRound,
   UserRoundCheck,
   UserRoundMinus,
-  Workflow,
-  ChartColumn,
-  ClipboardList,
-  HardDrive,
+  Users,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import {
-  DashboardMobileNav,
   DashboardPanel,
-  DashboardSidebar,
   DashboardStatCard,
   DashboardTopbar,
-  type DashboardNavSection,
 } from "../../../components/dashboard/primitives";
-import { useSidebarPermissions } from "../../../components/dashboard/use-sidebar-permissions";
+import {
+  DashboardMobileNav,
+  DashboardSidebar,
+} from "../../../components/dashboard/dashboard-nav";
+import {
+  DropdownSelect,
+  type DropdownOption,
+} from "../../../components/ui/dropdown-select";
 
 type UserStatus = "ACTIVE" | "INACTIVE" | "LOCKED";
 type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
@@ -54,9 +59,11 @@ type UserRecord = {
   lastName: string;
   fullName: string;
   department: string;
+  jobTitle: string | null;
   role: Role;
   roleTitle: string;
   status: UserStatus;
+  mustChangePassword?: boolean;
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -83,14 +90,23 @@ type UsersResponse = {
   };
 };
 
-type RoleTitlesResponse = {
-  data: Array<{
-    id: string;
-    name: string;
-    code: string;
-    type: "SYSTEM" | "CUSTOM";
-  }>;
+type AccessRoleOption = {
+  id: string;
+  name: string;
+  code: string;
+  type: "SYSTEM" | "CUSTOM";
+  description?: string | null;
 };
+
+type RoleTitlesResponse = {
+  data: AccessRoleOption[];
+};
+
+const statusSelectOptions: DropdownOption<UserStatus>[] = [
+  { value: "ACTIVE", label: "Active", badgeClassName: "bg-emerald-50 text-[var(--color-success)]" },
+  { value: "INACTIVE", label: "Inactive", badgeClassName: "bg-amber-50 text-[var(--color-warning)]" },
+  { value: "LOCKED", label: "Locked", badgeClassName: "bg-red-50 text-[var(--color-error)]" },
+];
 
 type UserFormState = {
   email: string;
@@ -98,6 +114,7 @@ type UserFormState = {
   firstName: string;
   lastName: string;
   department: string;
+  jobTitle: string;
   role: Role;
   roleTitle: string;
   status: UserStatus;
@@ -106,33 +123,46 @@ type UserFormState = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
-const sidebarSections: readonly DashboardNavSection[] = [
-  {
-    label: "MAIN",
-    items: [
-      { label: "Dashboard", Icon: LayoutDashboard, href: "/admin/dashboard" },
-      { label: "Policy Management", Icon: Files, href: "/admin/policy-management" },
-      { label: "Policy Library", Icon: Files, href: "/admin/policy-library" },
-      { label: "Categories", Icon: FolderTree, href: "/admin/categories" },
-      { label: "Users", Icon: Users, href: "/admin/users", active: true },
-      { label: "Roles & Permissions", Icon: ShieldCheck, href: "/admin/roles-permissions" },
-      { label: "Acknowledgments", Icon: BadgeCheck, href: "#" },
-      { label: "AI Assistant Analytics", Icon: Bot, href: "#" },
-      { label: "Reports", Icon: ChartColumn, href: "#" },
-      { label: "Audit Logs", Icon: ClipboardList, href: "#" },
-    ],
-  },
-  {
-    label: "SYSTEM",
-    items: [
-      { label: "Company", Icon: Building2, href: "#" },
-      { label: "Settings", Icon: Settings2, href: "#" },
-      { label: "Integrations", Icon: Workflow, href: "#" },
-      { label: "System Health", Icon: Activity, href: "#" },
-      { label: "Backup & Restore", Icon: HardDrive, href: "#" },
-    ],
-  },
-];
+function generateSecurePassword() {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnopqrstuvwxyz";
+  const numbers = "23456789";
+  const special = "!@#$%";
+  const all = `${upper}${lower}${numbers}${special}`;
+
+  const required = [
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    numbers[Math.floor(Math.random() * numbers.length)],
+    special[Math.floor(Math.random() * special.length)],
+  ];
+
+  const rest = Array.from({ length: 10 }, () => all[Math.floor(Math.random() * all.length)]);
+  const chars = [...required, ...rest];
+
+  for (let index = chars.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]];
+  }
+
+  return chars.join("");
+}
+
+function evaluatePassword(password: string) {
+  return [
+    { label: "At least 8 characters", met: password.length >= 8 },
+    {
+      label: "Uppercase and lowercase letters",
+      met: /[a-z]/.test(password) && /[A-Z]/.test(password),
+    },
+    { label: "At least one number", met: /\d/.test(password) },
+    { label: "At least one special character", met: /[^A-Za-z0-9]/.test(password) },
+  ];
+}
+
+function isPasswordStrong(password: string) {
+  return evaluatePassword(password).every((requirement) => requirement.met);
+}
 
 const defaultUserForm: UserFormState = {
   email: "",
@@ -140,17 +170,26 @@ const defaultUserForm: UserFormState = {
   firstName: "",
   lastName: "",
   department: "",
+  jobTitle: "",
   role: "EMPLOYEE",
-  roleTitle: "User",
+  roleTitle: "",
   status: "ACTIVE",
   password: "",
 };
 
-const roleOptions: Array<{ value: Role; label: string }> = [
-  { value: "ADMIN", label: "Admin" },
-  { value: "MANAGER", label: "Manager" },
-  { value: "EMPLOYEE", label: "Employee" },
-];
+function deriveSystemRole(accessRole: string): Role {
+  const normalized = accessRole.trim().toLowerCase();
+  if (normalized.includes("admin")) return "ADMIN";
+  if (
+    normalized.includes("manager") ||
+    normalized.includes("officer") ||
+    normalized.includes("head") ||
+    normalized.includes("compliance")
+  ) {
+    return "MANAGER";
+  }
+  return "EMPLOYEE";
+}
 
 function formatDateTime(value: string | null) {
   if (!value) {
@@ -189,30 +228,41 @@ function Modal({
   description,
   onClose,
   children,
+  icon: Icon,
+  maxWidthClassName = "sm:max-w-2xl",
 }: {
   title: string;
   description?: string;
   onClose: () => void;
   children: ReactNode;
+  icon?: LucideIcon;
+  maxWidthClassName?: string;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-900/45 p-0 sm:items-center sm:justify-center sm:p-4">
-      <div className="w-full rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-            {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
+      <div className={`w-full rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl ${maxWidthClassName}`}>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
+          <div className="flex min-w-0 items-start gap-3">
+            {Icon ? (
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-[var(--color-active-menu)]">
+                <Icon className="h-5 w-5" />
+              </span>
+            ) : null}
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+              {description ? <p className="mt-1 text-sm leading-5 text-slate-500">{description}</p> : null}
+            </div>
           </div>
           <button
             type="button"
             aria-label="Close dialog"
             onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="max-h-[80vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div className="max-h-[80vh] overflow-y-auto px-5 py-4 sm:px-6">{children}</div>
       </div>
     </div>
   );
@@ -220,16 +270,41 @@ function Modal({
 
 function FormField({
   label,
+  required = false,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
-    <label className="block space-y-2">
-      <span className="text-sm font-semibold text-slate-700">{label}</span>
+    <div className="block space-y-2">
+      <div className="text-sm font-semibold text-slate-700">
+        {label}
+        {required ? <span className="text-[var(--color-error)]"> *</span> : null}
+      </div>
       {children}
-    </label>
+    </div>
+  );
+}
+
+function FormSection({
+  title,
+  Icon,
+  children,
+}: {
+  title: string;
+  Icon: typeof UserRound;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-[var(--color-active-menu)]" />
+        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -265,10 +340,12 @@ export default function AdminUsersClient() {
   const [pageSize, setPageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [roleTitleOptions, setRoleTitleOptions] = useState<string[]>([]);
+  const [accessRoleOptions, setAccessRoleOptions] = useState<AccessRoleOption[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [passwordUserId, setPasswordUserId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -276,9 +353,14 @@ export default function AdminUsersClient() {
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [formState, setFormState] = useState<UserFormState>(defaultUserForm);
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showTempPassword, setShowTempPassword] = useState(false);
+  const [requirePasswordChange, setRequirePasswordChange] = useState(true);
+  const [requirePasswordChangeOnReset, setRequirePasswordChangeOnReset] = useState(true);
+  const [enableMfa, setEnableMfa] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const permissionSections = useSidebarPermissions(sidebarSections);
-
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setSearch(searchInput.trim());
@@ -315,7 +397,7 @@ export default function AdminUsersClient() {
 
   const loadRoleTitles = useCallback(async () => {
     const response = await requestJson<RoleTitlesResponse>("/roles-permissions/role-titles");
-    setRoleTitleOptions(response.data.map((role) => role.name));
+    setAccessRoleOptions(response.data);
   }, []);
 
   useEffect(() => {
@@ -399,19 +481,27 @@ export default function AdminUsersClient() {
 
   function openCreateModal() {
     resetMessages();
-    setFormState(defaultUserForm);
+    setFormState({
+      ...defaultUserForm,
+      password: generateSecurePassword(),
+    });
+    setShowTempPassword(false);
+    setRequirePasswordChange(true);
+    setEnableMfa(true);
     setShowCreateModal(true);
   }
 
   function openEditModal(user: UserRecord) {
     resetMessages();
     setSelectedUser(user);
+    setEditingUserId(user.id);
     setFormState({
       email: user.email,
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
       department: user.department,
+      jobTitle: user.jobTitle ?? "",
       role: user.role,
       roleTitle: user.roleTitle,
       status: user.status,
@@ -429,7 +519,12 @@ export default function AdminUsersClient() {
   function openPasswordModal(user: UserRecord) {
     resetMessages();
     setSelectedUser(user);
-    setNewPassword("");
+    setPasswordUserId(user.id);
+    setNewPassword(generateSecurePassword());
+    setConfirmPassword("");
+    setShowNewPassword(true);
+    setShowConfirmPassword(false);
+    setRequirePasswordChangeOnReset(true);
     setShowPasswordModal(true);
   }
 
@@ -445,10 +540,26 @@ export default function AdminUsersClient() {
     setShowPasswordModal(false);
     setShowGuideModal(false);
     setSelectedUser(null);
+    setEditingUserId(null);
+    setPasswordUserId(null);
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
   }
 
   function updateFormField<K extends keyof UserFormState>(key: K, value: UserFormState[K]) {
-    setFormState((current) => ({ ...current, [key]: value }));
+    setFormState((current) => {
+      if (key === "roleTitle" && typeof value === "string") {
+        return {
+          ...current,
+          roleTitle: value,
+          role: deriveSystemRole(value),
+        };
+      }
+
+      return { ...current, [key]: value };
+    });
   }
 
   async function handleCreateUser() {
@@ -456,9 +567,27 @@ export default function AdminUsersClient() {
     resetMessages();
 
     try {
+      const jobTitle = formState.jobTitle.trim();
+      if (!isPasswordStrong(formState.password)) {
+        throw new Error(
+          "Temporary password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.",
+        );
+      }
       await requestJson<UserRecord>("/users", {
         method: "POST",
-        body: JSON.stringify(formState),
+        body: JSON.stringify({
+          email: formState.email,
+          username: formState.username,
+          password: formState.password,
+          firstName: formState.firstName,
+          lastName: formState.lastName,
+          department: formState.department,
+          jobTitle: jobTitle.length > 0 ? jobTitle : null,
+          roleTitle: formState.roleTitle.trim(),
+          role: deriveSystemRole(formState.roleTitle),
+          status: formState.status,
+          mustChangePassword: requirePasswordChange,
+        }),
       });
       setSuccessMessage("User created successfully.");
       closeModals();
@@ -471,7 +600,9 @@ export default function AdminUsersClient() {
   }
 
   async function handleUpdateUser() {
-    if (!selectedUser) {
+    const userId = editingUserId ?? selectedUser?.id;
+    if (!userId) {
+      setErrorMessage("Unable to update user. Please reopen the edit form and try again.");
       return;
     }
 
@@ -479,7 +610,8 @@ export default function AdminUsersClient() {
     resetMessages();
 
     try {
-      await requestJson<UserRecord>(`/users/${selectedUser.id}`, {
+      const jobTitle = formState.jobTitle.trim();
+      await requestJson<UserRecord>(`/users/${userId}`, {
         method: "PATCH",
         body: JSON.stringify({
           email: formState.email,
@@ -487,7 +619,8 @@ export default function AdminUsersClient() {
           firstName: formState.firstName,
           lastName: formState.lastName,
           department: formState.department,
-          role: formState.role,
+          jobTitle: jobTitle.length > 0 ? jobTitle : null,
+          role: deriveSystemRole(formState.roleTitle),
           roleTitle: formState.roleTitle,
           status: formState.status,
         }),
@@ -503,7 +636,21 @@ export default function AdminUsersClient() {
   }
 
   async function handleResetPassword() {
-    if (!selectedUser) {
+    const userId = passwordUserId ?? selectedUser?.id;
+    if (!userId) {
+      setErrorMessage("Unable to reset password. Please reopen the form and try again.");
+      return;
+    }
+
+    if (!isPasswordStrong(newPassword)) {
+      setErrorMessage(
+        "Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.",
+      );
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setErrorMessage("New password and confirmation do not match.");
       return;
     }
 
@@ -511,15 +658,19 @@ export default function AdminUsersClient() {
     resetMessages();
 
     try {
-      await requestJson<UserRecord>(`/users/${selectedUser.id}/password`, {
+      await requestJson<UserRecord>(`/users/${userId}/password`, {
         method: "PATCH",
-        body: JSON.stringify({ password: newPassword }),
+        body: JSON.stringify({
+          password: newPassword,
+          mustChangePassword: requirePasswordChangeOnReset,
+          unlockAccount: selectedUser?.status === "LOCKED",
+        }),
       });
-      setSuccessMessage("Password updated successfully.");
+      setSuccessMessage("Password reset successfully.");
       closeModals();
       await loadUsers();
     } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to update password.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to reset password.");
     } finally {
       setIsSaving(false);
     }
@@ -602,21 +753,7 @@ export default function AdminUsersClient() {
 
   return (
     <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
-      <DashboardSidebar
-        className="bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.18),transparent_20%),linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)]"
-        sections={permissionSections}
-        footer={
-          <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/6 p-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
-              <Building2 className="h-4.5 w-4.5" />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-white">Rural Bank of Itogon</div>
-              <div className="text-[0.8rem] text-white/70">Organization</div>
-            </div>
-          </div>
-        }
-      />
+      <DashboardSidebar variant="admin" />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
@@ -631,7 +768,7 @@ export default function AdminUsersClient() {
           showMenuButton
           className="bg-white/88"
         />
-        <DashboardMobileNav sections={permissionSections} />
+        <DashboardMobileNav variant="admin" />
 
         <div className="px-4 py-5 md:px-5">
           <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -709,52 +846,46 @@ export default function AdminUsersClient() {
                   />
                 </label>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:flex">
-                  <select
-                    value={statusFilter}
-                    onChange={(event) => {
-                      setStatusFilter(event.target.value);
+                <div className="grid gap-3 sm:grid-cols-2 xl:flex xl:items-center">
+                  <DropdownSelect
+                    value={statusFilter === "ALL" ? "" : statusFilter}
+                    onChange={(value) => {
+                      setStatusFilter(value || "ALL");
                       setPage(1);
                     }}
-                    className={InputClassName()}
-                  >
-                    <option value="ALL">All Status</option>
-                    {filters.statuses.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={roleFilter}
-                    onChange={(event) => {
-                      setRoleFilter(event.target.value);
+                    options={filters.statuses.map((status) => ({
+                      value: status,
+                      label: status.charAt(0) + status.slice(1).toLowerCase(),
+                    }))}
+                    placeholder="All Status"
+                    allowClear
+                    className="min-w-[10rem]"
+                  />
+                  <DropdownSelect
+                    value={roleFilter === "ALL" ? "" : roleFilter}
+                    onChange={(value) => {
+                      setRoleFilter(value || "ALL");
                       setPage(1);
                     }}
-                    className={InputClassName()}
-                  >
-                    <option value="ALL">All Roles</option>
-                    {filters.roles.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={departmentFilter}
-                    onChange={(event) => {
-                      setDepartmentFilter(event.target.value);
+                    options={filters.roles.map((role) => ({ value: role, label: role }))}
+                    placeholder="All Roles"
+                    allowClear
+                    className="min-w-[10rem]"
+                  />
+                  <DropdownSelect
+                    value={departmentFilter === "ALL" ? "" : departmentFilter}
+                    onChange={(value) => {
+                      setDepartmentFilter(value || "ALL");
                       setPage(1);
                     }}
-                    className={InputClassName()}
-                  >
-                    <option value="ALL">All Departments</option>
-                    {filters.departments.map((department) => (
-                      <option key={department} value={department}>
-                        {department}
-                      </option>
-                    ))}
-                  </select>
+                    options={filters.departments.map((department) => ({
+                      value: department,
+                      label: department,
+                    }))}
+                    placeholder="All Departments"
+                    allowClear
+                    className="min-w-[10rem]"
+                  />
                   <button
                     type="button"
                     onClick={() => {
@@ -784,7 +915,7 @@ export default function AdminUsersClient() {
                       <tr>
                         <th className="px-4 py-3">User</th>
                         <th className="px-4 py-3">Department</th>
-                        <th className="px-4 py-3">Role</th>
+                        <th className="px-4 py-3">Access Role</th>
                         <th className="px-4 py-3">Status</th>
                         <th className="px-4 py-3">Last Login</th>
                         <th className="px-4 py-3 text-right">Actions</th>
@@ -861,7 +992,7 @@ export default function AdminUsersClient() {
                       <div className="mt-3 grid gap-2 text-sm text-slate-600">
                         <div><span className="font-semibold text-slate-700">Username:</span> @{user.username}</div>
                         <div><span className="font-semibold text-slate-700">Department:</span> {user.department}</div>
-                        <div><span className="font-semibold text-slate-700">Role:</span> {user.roleTitle}</div>
+                        <div><span className="font-semibold text-slate-700">Access Role:</span> {user.roleTitle}</div>
                         <div><span className="font-semibold text-slate-700">Last Login:</span> {formatDateTime(user.lastLoginAt)}</div>
                       </div>
 
@@ -895,20 +1026,21 @@ export default function AdminUsersClient() {
                   </span>
 
                   <div className="flex flex-wrap items-center gap-3">
-                    <select
-                      value={pageSize}
-                      onChange={(event) => {
-                        setPageSize(Number(event.target.value));
+                    <DropdownSelect
+                      value={String(pageSize)}
+                      onChange={(value) => {
+                        if (!value) return;
+                        setPageSize(Number(value));
                         setPage(1);
                       }}
-                      className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600"
-                    >
-                      {[5, 10, 20, 50].map((value) => (
-                        <option key={value} value={value}>
-                          {value} per page
-                        </option>
-                      ))}
-                    </select>
+                      options={[5, 10, 20, 50].map((value) => ({
+                        value: String(value),
+                        label: `${value} per page`,
+                      }))}
+                      size="sm"
+                      className="w-[8.5rem]"
+                      aria-label="Rows per page"
+                    />
 
                     <div className="flex items-center gap-2">
                       <button
@@ -984,18 +1116,44 @@ export default function AdminUsersClient() {
           title="Add New User"
           description="Create a new user and assign their role, department, and initial password."
           onClose={closeModals}
+          icon={UserPlus}
+          maxWidthClassName="sm:max-w-3xl"
         >
-          <UserForm formState={formState} onChange={updateFormField} includePassword roleTitleOptions={roleTitleOptions} />
+          <UserAccountForm
+            formState={formState}
+            onChange={updateFormField}
+            departmentOptions={filters.departments}
+            accessRoleOptions={accessRoleOptions}
+            includeSecurity
+            showPassword={showTempPassword}
+            onTogglePassword={() => setShowTempPassword((current) => !current)}
+            onRegeneratePassword={() => updateFormField("password", generateSecurePassword())}
+            requirePasswordChange={requirePasswordChange}
+            onRequirePasswordChangeChange={setRequirePasswordChange}
+            enableMfa={enableMfa}
+            onEnableMfaChange={setEnableMfa}
+          />
+          <div className="mt-5 flex items-start gap-2.5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3.5">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-active-menu)]" />
+            <p className="text-sm leading-5 text-slate-600">
+              An email with login instructions and temporary password will be sent to the user.
+            </p>
+          </div>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <button type="button" onClick={closeModals} className="h-11 rounded-xl border border-slate-200 px-4 font-semibold text-slate-700">
+            <button
+              type="button"
+              onClick={closeModals}
+              className="h-11 rounded-xl border border-slate-200 bg-white px-5 font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
               Cancel
             </button>
             <button
               type="button"
               onClick={() => void handleCreateUser()}
               disabled={isSaving}
-              className="h-11 rounded-xl bg-gradient-to-r from-[var(--color-active-menu)] to-[var(--color-hover)] px-4 font-semibold text-white disabled:opacity-60"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-5 font-semibold text-white transition hover:bg-[var(--color-hover)] disabled:opacity-60"
             >
+              <UserPlus className="h-4 w-4" />
               {isSaving ? "Creating..." : "Create User"}
             </button>
           </div>
@@ -1005,20 +1163,32 @@ export default function AdminUsersClient() {
       {showEditModal ? (
         <Modal
           title="Edit User"
-          description="Update access, status, department, and account details."
+          description="Update personal details, organization access, and account status."
           onClose={closeModals}
+          icon={Pencil}
+          maxWidthClassName="sm:max-w-3xl"
         >
-          <UserForm formState={formState} onChange={updateFormField} roleTitleOptions={roleTitleOptions} />
+          <UserAccountForm
+            formState={formState}
+            onChange={updateFormField}
+            departmentOptions={filters.departments}
+            accessRoleOptions={accessRoleOptions}
+          />
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <button type="button" onClick={closeModals} className="h-11 rounded-xl border border-slate-200 px-4 font-semibold text-slate-700">
+            <button
+              type="button"
+              onClick={closeModals}
+              className="h-11 rounded-xl border border-slate-200 bg-white px-5 font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
               Cancel
             </button>
             <button
               type="button"
               onClick={() => void handleUpdateUser()}
               disabled={isSaving}
-              className="h-11 rounded-xl bg-gradient-to-r from-[var(--color-active-menu)] to-[var(--color-hover)] px-4 font-semibold text-white disabled:opacity-60"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-5 font-semibold text-white transition hover:bg-[var(--color-hover)] disabled:opacity-60"
             >
+              <Pencil className="h-4 w-4" />
               {isSaving ? "Saving..." : "Save Changes"}
             </button>
           </div>
@@ -1030,16 +1200,155 @@ export default function AdminUsersClient() {
           title="User Details"
           description="Review account details, status, and access information."
           onClose={closeModals}
+          icon={UserRound}
+          maxWidthClassName="sm:max-w-3xl"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <InfoItem label="Full Name" value={selectedUser.fullName} />
-            <InfoItem label="Email" value={selectedUser.email} />
-            <InfoItem label="Username" value={`@${selectedUser.username}`} />
-            <InfoItem label="Department" value={selectedUser.department} />
-            <InfoItem label="System Role" value={selectedUser.role} />
-            <InfoItem label="Role Title" value={selectedUser.roleTitle} />
-            <InfoItem label="Status" value={selectedUser.status} />
-            <InfoItem label="Last Login" value={formatDateTime(selectedUser.lastLoginAt)} />
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Account Overview</h3>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <DetailCard
+                  label="Full Name"
+                  value={selectedUser.fullName}
+                  Icon={UserRound}
+                  iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
+                />
+                <DetailCard
+                  label="Email"
+                  value={selectedUser.email}
+                  Icon={Mail}
+                  iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
+                />
+                <DetailCard
+                  label="Username"
+                  value={`@${selectedUser.username}`}
+                  Icon={AtSign}
+                  iconClassName="bg-violet-50 text-violet-600"
+                />
+                <DetailCard
+                  label="Department"
+                  value={selectedUser.department}
+                  Icon={Building2}
+                  iconClassName="bg-emerald-50 text-[var(--color-success)]"
+                />
+                <DetailCard
+                  label="Job Title"
+                  value={selectedUser.jobTitle?.trim() || "—"}
+                  Icon={Briefcase}
+                  iconClassName="bg-orange-50 text-orange-600"
+                />
+                <DetailCard
+                  label="Access Role"
+                  value={selectedUser.roleTitle}
+                  Icon={Shield}
+                  iconClassName="bg-violet-50 text-violet-600"
+                />
+                <DetailCard
+                  label="Status"
+                  Icon={CircleDot}
+                  iconClassName={
+                    selectedUser.status === "ACTIVE"
+                      ? "bg-emerald-50 text-[var(--color-success)]"
+                      : selectedUser.status === "LOCKED"
+                        ? "bg-red-50 text-[var(--color-error)]"
+                        : "bg-amber-50 text-[var(--color-warning)]"
+                  }
+                  valueNode={
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${getStatusTone(selectedUser.status)}`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          selectedUser.status === "ACTIVE"
+                            ? "bg-[var(--color-success)]"
+                            : selectedUser.status === "LOCKED"
+                              ? "bg-[var(--color-error)]"
+                              : "bg-[var(--color-warning)]"
+                        }`}
+                      />
+                      {selectedUser.status.charAt(0) + selectedUser.status.slice(1).toLowerCase()}
+                    </span>
+                  }
+                />
+                <DetailCard
+                  label="Last Login"
+                  value={formatDateTime(selectedUser.lastLoginAt)}
+                  Icon={Clock3}
+                  iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
+                />
+              </div>
+            </div>
+
+            <div
+              className={`flex items-start gap-3 rounded-2xl border px-4 py-3.5 ${
+                selectedUser.status === "ACTIVE"
+                  ? "border-blue-100 bg-blue-50"
+                  : selectedUser.status === "LOCKED"
+                    ? "border-red-100 bg-red-50"
+                    : "border-amber-100 bg-amber-50"
+              }`}
+            >
+              <Info
+                className={`mt-0.5 h-4 w-4 shrink-0 ${
+                  selectedUser.status === "ACTIVE"
+                    ? "text-[var(--color-active-menu)]"
+                    : selectedUser.status === "LOCKED"
+                      ? "text-[var(--color-error)]"
+                      : "text-[var(--color-warning)]"
+                }`}
+              />
+              <div>
+                <div
+                  className={`text-sm font-bold ${
+                    selectedUser.status === "ACTIVE"
+                      ? "text-[var(--color-active-menu)]"
+                      : selectedUser.status === "LOCKED"
+                        ? "text-[var(--color-error)]"
+                        : "text-[var(--color-warning)]"
+                  }`}
+                >
+                  {selectedUser.status === "ACTIVE"
+                    ? "Account is Active"
+                    : selectedUser.status === "LOCKED"
+                      ? "Account is Locked"
+                      : "Account is Inactive"}
+                </div>
+                <p className="mt-0.5 text-sm leading-5 text-slate-600">
+                  {selectedUser.status === "ACTIVE"
+                    ? "This user can access the system and assigned resources."
+                    : selectedUser.status === "LOCKED"
+                      ? "This user is locked and cannot sign in until unlocked."
+                      : "This user is inactive and currently cannot access the system."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  const user = selectedUser;
+                  closeModals();
+                  openEditModal(user);
+                }}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-sm font-semibold text-[var(--color-active-menu)] transition hover:bg-blue-50"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit User
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const user = selectedUser;
+                  closeModals();
+                  openPasswordModal(user);
+                }}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--color-hover)]"
+              >
+                <Lock className="h-4 w-4" />
+                Change Password
+              </button>
+            </div>
           </div>
         </Modal>
       ) : null}
@@ -1047,30 +1356,166 @@ export default function AdminUsersClient() {
       {showPasswordModal && selectedUser ? (
         <Modal
           title="Reset Password"
-          description={`Set a new password for ${selectedUser.fullName}.`}
+          description="Generate or enter a new secure password for this user account."
           onClose={closeModals}
+          icon={KeyRound}
+          maxWidthClassName="sm:max-w-2xl"
         >
-          <FormField label="New Password">
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              className={InputClassName()}
-              placeholder="Enter a secure password"
-            />
-          </FormField>
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <button type="button" onClick={closeModals} className="h-11 rounded-xl border border-slate-200 px-4 font-semibold text-slate-700">
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleResetPassword()}
-              disabled={isSaving || newPassword.trim().length < 6}
-              className="h-11 rounded-xl bg-gradient-to-r from-[var(--color-active-menu)] to-[var(--color-hover)] px-4 font-semibold text-white disabled:opacity-60"
-            >
-              {isSaving ? "Updating..." : "Update Password"}
-            </button>
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3.5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-[var(--color-active-menu)]">
+                {getInitials(selectedUser)}
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold text-slate-900">{selectedUser.fullName}</div>
+                <div className="mt-0.5 truncate text-xs text-slate-500">
+                  {selectedUser.email} · @{selectedUser.username}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+              <div className="space-y-4">
+                <FormField label="New Password" required>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      className={`${InputClassName()} pr-20 font-mono`}
+                      placeholder="Enter or generate a secure password"
+                      autoComplete="new-password"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 pr-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword((current) => !current)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                        aria-label={showNewPassword ? "Hide password" : "Show password"}
+                      >
+                        {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextPassword = generateSecurePassword();
+                          setNewPassword(nextPassword);
+                          setConfirmPassword(nextPassword);
+                          setShowNewPassword(true);
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                        aria-label="Generate password"
+                        title="Generate password"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    Use the refresh icon to generate a strong password automatically.
+                  </p>
+                </FormField>
+
+                <FormField label="Confirm Password" required>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      className={`${InputClassName()} pr-11 font-mono`}
+                      placeholder="Re-enter the new password"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((current) => !current)}
+                      className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-slate-400 transition hover:text-slate-600"
+                      aria-label={showConfirmPassword ? "Hide confirmation" : "Show confirmation"}
+                    >
+                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {confirmPassword && confirmPassword !== newPassword ? (
+                    <p className="mt-2 text-xs font-medium text-[var(--color-error)]">
+                      Passwords do not match.
+                    </p>
+                  ) : null}
+                </FormField>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3.5">
+                  <input
+                    type="checkbox"
+                    checked={requirePasswordChangeOnReset}
+                    onChange={(event) => setRequirePasswordChangeOnReset(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)] focus:ring-[var(--color-active-menu)]"
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-slate-800">
+                      Require password change on next login
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">
+                      User must create a new password the next time they sign in.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                <div className="flex items-start gap-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[var(--color-active-menu)]">
+                    <ShieldCheck className="h-4.5 w-4.5" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">Password must contain:</div>
+                    <ul className="mt-3 space-y-2">
+                      {evaluatePassword(newPassword).map((requirement) => (
+                        <li
+                          key={requirement.label}
+                          className="flex items-start gap-2 text-sm font-medium text-slate-600"
+                        >
+                          <CheckCircle2
+                            className={`mt-0.5 h-4 w-4 shrink-0 ${
+                              requirement.met ? "text-[var(--color-success)]" : "text-slate-300"
+                            }`}
+                          />
+                          <span>{requirement.label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3.5">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-active-menu)]" />
+              <p className="text-sm leading-5 text-slate-600">
+                Share this password securely with the user. For security, they should change it after signing in.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeModals}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-5 font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleResetPassword()}
+                disabled={
+                  isSaving ||
+                  !isPasswordStrong(newPassword) ||
+                  newPassword !== confirmPassword
+                }
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-5 font-semibold text-white transition hover:bg-[var(--color-hover)] disabled:opacity-60"
+              >
+                <KeyRound className="h-4 w-4" />
+                {isSaving ? "Resetting..." : "Reset Password"}
+              </button>
+            </div>
           </div>
         </Modal>
       ) : null}
@@ -1146,83 +1591,249 @@ function ActionTextButton({
   );
 }
 
-function UserForm({
+function UserAccountForm({
   formState,
   onChange,
-  roleTitleOptions,
-  includePassword = false,
+  departmentOptions,
+  accessRoleOptions,
+  includeSecurity = false,
+  showPassword = false,
+  onTogglePassword,
+  onRegeneratePassword,
+  requirePasswordChange = true,
+  onRequirePasswordChangeChange,
+  enableMfa = true,
+  onEnableMfaChange,
 }: {
   formState: UserFormState;
   onChange: <K extends keyof UserFormState>(key: K, value: UserFormState[K]) => void;
-  roleTitleOptions: string[];
-  includePassword?: boolean;
+  departmentOptions: string[];
+  accessRoleOptions: AccessRoleOption[];
+  includeSecurity?: boolean;
+  showPassword?: boolean;
+  onTogglePassword?: () => void;
+  onRegeneratePassword?: () => void;
+  requirePasswordChange?: boolean;
+  onRequirePasswordChangeChange?: (value: boolean) => void;
+  enableMfa?: boolean;
+  onEnableMfaChange?: (value: boolean) => void;
 }) {
   const inputClassName =
-    "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[var(--color-active-menu)] focus:ring-4 focus:ring-blue-100";
+    "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--color-active-menu)] focus:ring-4 focus:ring-blue-100";
+
+  const departmentSelectOptions = departmentOptions.map((department) => ({
+    value: department,
+    label: department,
+  }));
+
+  const accessSelectOptions = accessRoleOptions.map((role) => ({
+    value: role.name,
+    label: role.name,
+  }));
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <FormField label="First Name">
-        <input value={formState.firstName} onChange={(event) => onChange("firstName", event.target.value)} className={inputClassName} />
-      </FormField>
-      <FormField label="Last Name">
-        <input value={formState.lastName} onChange={(event) => onChange("lastName", event.target.value)} className={inputClassName} />
-      </FormField>
-      <FormField label="Email Address">
-        <input type="email" value={formState.email} onChange={(event) => onChange("email", event.target.value)} className={inputClassName} />
-      </FormField>
-      <FormField label="Username">
-        <input value={formState.username} onChange={(event) => onChange("username", event.target.value)} className={inputClassName} />
-      </FormField>
-      <FormField label="Department">
-        <input value={formState.department} onChange={(event) => onChange("department", event.target.value)} className={inputClassName} />
-      </FormField>
-      <FormField label="Role Title">
-        <select value={formState.roleTitle} onChange={(event) => onChange("roleTitle", event.target.value)} className={inputClassName}>
-          {roleTitleOptions.map((roleTitle) => (
-            <option key={roleTitle} value={roleTitle}>
-              {roleTitle}
-            </option>
-          ))}
-        </select>
-      </FormField>
-      <FormField label="System Role">
-        <select value={formState.role} onChange={(event) => onChange("role", event.target.value as Role)} className={inputClassName}>
-          {roleOptions.map((role) => (
-            <option key={role.value} value={role.value}>
-              {role.label}
-            </option>
-          ))}
-        </select>
-      </FormField>
-      <FormField label="Status">
-        <select value={formState.status} onChange={(event) => onChange("status", event.target.value as UserStatus)} className={inputClassName}>
-          <option value="ACTIVE">ACTIVE</option>
-          <option value="INACTIVE">INACTIVE</option>
-          <option value="LOCKED">LOCKED</option>
-        </select>
-      </FormField>
-      {includePassword ? (
-        <div className="sm:col-span-2">
-          <FormField label="Temporary Password">
+    <div className="space-y-6">
+      <FormSection title="Personal Information" Icon={UserRound}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField label="First Name" required>
             <input
-              type="password"
-              value={formState.password}
-              onChange={(event) => onChange("password", event.target.value)}
+              value={formState.firstName}
+              onChange={(event) => onChange("firstName", event.target.value)}
               className={inputClassName}
+              placeholder="e.g. Juan"
+            />
+          </FormField>
+          <FormField label="Last Name" required>
+            <input
+              value={formState.lastName}
+              onChange={(event) => onChange("lastName", event.target.value)}
+              className={inputClassName}
+              placeholder="e.g. Dela Cruz"
+            />
+          </FormField>
+          <FormField label="Email Address" required>
+            <input
+              type="email"
+              value={formState.email}
+              onChange={(event) => onChange("email", event.target.value)}
+              className={inputClassName}
+              placeholder="e.g. juan.delacruz@ruralbank.com.ph"
+            />
+          </FormField>
+          <FormField label="Username" required>
+            <input
+              value={formState.username}
+              onChange={(event) => onChange("username", event.target.value)}
+              className={inputClassName}
+              placeholder="e.g. jdelacruz"
             />
           </FormField>
         </div>
+      </FormSection>
+
+      <div className="border-t border-slate-100" />
+
+      <FormSection title="Organization Information" Icon={Building2}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField label="Department" required>
+            {departmentSelectOptions.length > 0 ? (
+              <DropdownSelect
+                value={formState.department}
+                onChange={(value) => onChange("department", value)}
+                options={departmentSelectOptions}
+                placeholder="Select department"
+              />
+            ) : (
+              <input
+                value={formState.department}
+                onChange={(event) => onChange("department", event.target.value)}
+                className={inputClassName}
+                placeholder="Select department"
+              />
+            )}
+          </FormField>
+          <FormField label="Job Title">
+            <input
+              value={formState.jobTitle}
+              onChange={(event) => onChange("jobTitle", event.target.value)}
+              className={inputClassName}
+              placeholder="e.g. IT Specialist"
+            />
+          </FormField>
+          <FormField label="Access Role" required>
+            <DropdownSelect
+              value={formState.roleTitle}
+              onChange={(value) => onChange("roleTitle", value)}
+              options={accessSelectOptions}
+              placeholder="Select access role"
+            />
+          </FormField>
+          <FormField label="Status" required>
+            <DropdownSelect
+              value={formState.status}
+              onChange={(value) => {
+                if (value) onChange("status", value);
+              }}
+              options={statusSelectOptions}
+              placeholder="Select status"
+              allowClear={false}
+              renderValue={(option) =>
+                option ? (
+                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${option.badgeClassName}`}>
+                    {option.label}
+                  </span>
+                ) : (
+                  <span className="font-medium text-slate-400">Select status</span>
+                )
+              }
+            />
+          </FormField>
+        </div>
+      </FormSection>
+
+      {includeSecurity ? (
+        <>
+          <div className="border-t border-slate-100" />
+
+          <FormSection title="Account Security" Icon={Lock}>
+            <FormField label="Temporary Password" required>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={formState.password}
+                  onChange={(event) => onChange("password", event.target.value)}
+                  className={`${inputClassName} pr-20 font-mono`}
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 pr-1.5">
+                  <button
+                    type="button"
+                    onClick={onTogglePassword}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRegeneratePassword}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="Regenerate password"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                The user will be required to change this password on first login.
+              </p>
+            </FormField>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3.5">
+                <input
+                  type="checkbox"
+                  checked={requirePasswordChange}
+                  onChange={(event) => onRequirePasswordChangeChange?.(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)] focus:ring-[var(--color-active-menu)]"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-slate-800">
+                    Require password change on first login
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">
+                    User must create a new password when they first sign in.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3.5">
+                <input
+                  type="checkbox"
+                  checked={enableMfa}
+                  onChange={(event) => onEnableMfaChange?.(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)] focus:ring-[var(--color-active-menu)]"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-slate-800">
+                    Enable Multi-Factor Authentication
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">
+                    User will be required to set up MFA on first login.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </FormSection>
+        </>
       ) : null}
     </div>
   );
 }
 
-function InfoItem({ label, value }: { label: string; value: string }) {
+function DetailCard({
+  label,
+  value,
+  valueNode,
+  Icon,
+  iconClassName,
+}: {
+  label: string;
+  value?: string;
+  valueNode?: ReactNode;
+  Icon: LucideIcon;
+  iconClassName: string;
+}) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
+    <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5">
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}>
+        <Icon className="h-4.5 w-4.5" />
+      </span>
+      <div className="min-w-0">
+        <div className="text-xs font-semibold text-slate-400">{label}</div>
+        <div className="mt-1 text-sm font-bold text-slate-900">
+          {valueNode ?? value}
+        </div>
+      </div>
     </div>
   );
 }

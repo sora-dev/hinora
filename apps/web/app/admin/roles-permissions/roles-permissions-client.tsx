@@ -1,41 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
-  BadgeCheck,
-  Bot,
-  Building2,
-  ChartColumn,
   CircleHelp,
-  ClipboardList,
   Copy,
   Eye,
   FileDown,
-  Files,
-  FolderTree,
-  HardDrive,
-  LayoutDashboard,
   Pencil,
   Plus,
   Search,
-  Settings2,
   ShieldCheck,
   Trash2,
-  Users,
-  Workflow,
   X,
 } from "lucide-react";
+import { DashboardPanel, DashboardTopbar } from "../../../components/dashboard/primitives";
 import {
   DashboardMobileNav,
-  DashboardPanel,
   DashboardSidebar,
-  DashboardTopbar,
-  type DashboardNavSection,
-} from "../../../components/dashboard/primitives";
-import { useSidebarPermissions } from "../../../components/dashboard/use-sidebar-permissions";
+} from "../../../components/dashboard/dashboard-nav";
+import { DropdownSelect } from "../../../components/ui/dropdown-select";
+import {
+  displayModuleLabel,
+  getPermissionModule,
+  groupPermissionsBySection,
+  permissionModules,
+} from "../../../components/dashboard/permission-modules";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
@@ -90,51 +80,6 @@ type DeleteRoleResponse = {
   message: string;
 };
 
-const sidebarSections: readonly DashboardNavSection[] = [
-  {
-    label: "MAIN",
-    items: [
-      { label: "Dashboard", Icon: LayoutDashboard, href: "/admin/dashboard" },
-      { label: "Policy Management", Icon: Files, href: "/admin/policy-management" },
-      { label: "Policy Library", Icon: Files, href: "/admin/policy-library" },
-      { label: "Categories", Icon: FolderTree, href: "/admin/categories" },
-      { label: "Users", Icon: Users, href: "/admin/users" },
-      { label: "Roles & Permissions", Icon: ShieldCheck, href: "/admin/roles-permissions", active: true },
-      { label: "Acknowledgments", Icon: BadgeCheck, href: "#" },
-      { label: "AI Assistant Analytics", Icon: Bot, href: "#" },
-      { label: "Reports", Icon: ChartColumn, href: "#" },
-      { label: "Audit Logs", Icon: ClipboardList, href: "#" },
-    ],
-  },
-  {
-    label: "SYSTEM",
-    items: [
-      { label: "Company", Icon: Building2, href: "#" },
-      { label: "Settings", Icon: Settings2, href: "#" },
-      { label: "Integrations", Icon: Workflow, href: "#" },
-      { label: "System Health", Icon: Activity, href: "#" },
-      { label: "Backup & Restore", Icon: HardDrive, href: "#" },
-    ],
-  },
-];
-
-const moduleDefinitions: Array<{ key: string; Icon: LucideIcon }> = [
-  { key: "Dashboard", Icon: LayoutDashboard },
-  { key: "Policy Library", Icon: Files },
-  { key: "Categories", Icon: FolderTree },
-  { key: "Users", Icon: Users },
-  { key: "Roles & Permissions", Icon: ShieldCheck },
-  { key: "Acknowledgments", Icon: BadgeCheck },
-  { key: "AI Assistant Analytics", Icon: Bot },
-  { key: "Reports", Icon: ChartColumn },
-  { key: "Audit Logs", Icon: ClipboardList },
-  { key: "Company", Icon: Building2 },
-  { key: "Settings", Icon: Settings2 },
-  { key: "Integrations", Icon: Workflow },
-  { key: "System Health", Icon: Activity },
-  { key: "Backup & Restore", Icon: HardDrive },
-] as const;
-
 const defaultCreateRoleForm: CreateRoleForm = {
   name: "",
   code: "",
@@ -170,10 +115,6 @@ function formatDate(value: string) {
     day: "numeric",
     year: "numeric",
   }).format(new Date(value));
-}
-
-function displayModuleLabel(moduleKey: string) {
-  return moduleKey === "Policy Library" ? "Policy Management" : moduleKey;
 }
 
 function permissionIndicator(value: boolean | null) {
@@ -239,8 +180,6 @@ export default function AdminRolesPermissionsClient() {
       [role.name, role.code, role.description ?? ""].join(" ").toLowerCase().includes(query),
     );
   }, [rolesResponse, searchInput]);
-
-  const permissionSections = useSidebarPermissions(sidebarSections);
 
   const hasPendingPermissionChanges = useMemo(() => {
     if (!selectedRoleDetail) {
@@ -503,7 +442,7 @@ export default function AdminRolesPermissionsClient() {
   }
 
   const matrixRows = useMemo(() => {
-    return moduleDefinitions.map((moduleDefinition) => {
+    return permissionModules.map((moduleDefinition) => {
       const totals = rolesResponse.reduce(
         (count, role) => count + (role.viewModules.includes(moduleDefinition.key) ? 1 : 0),
         0,
@@ -516,23 +455,14 @@ export default function AdminRolesPermissionsClient() {
     });
   }, [rolesResponse]);
 
+  const permissionGroups = useMemo(
+    () => groupPermissionsBySection(draftPermissions),
+    [draftPermissions],
+  );
+
   return (
     <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
-      <DashboardSidebar
-        className="bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.18),transparent_20%),linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)]"
-        sections={permissionSections}
-        footer={
-          <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/6 p-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
-              <Building2 className="h-4.5 w-4.5" />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-white">Rural Bank of Itogon</div>
-              <div className="text-[0.8rem] text-white/70">Organization</div>
-            </div>
-          </div>
-        }
-      />
+      <DashboardSidebar variant="admin" />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
@@ -547,7 +477,7 @@ export default function AdminRolesPermissionsClient() {
           showMenuButton
           className="bg-white/88"
         />
-        <DashboardMobileNav sections={permissionSections} />
+        <DashboardMobileNav variant="admin" />
 
         <div className="px-4 py-5 md:px-5">
           <div className="mb-5">
@@ -696,7 +626,10 @@ export default function AdminRolesPermissionsClient() {
                   <div className="border-b border-slate-200 px-5 py-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <p className="text-sm text-slate-500">
-                        Starter mode: only the <span className="font-semibold text-slate-700">View</span> permission is live. You can make several changes first, then save once.
+                        Starter mode: only the <span className="font-semibold text-slate-700">View</span>{" "}
+                        permission is live. Tick View to control what appears in a user&apos;s sidebar —
+                        custom roles like HR Manager or Compliance Officer do not need to be named
+                        Administrator. Granting any admin module sends them to the admin portal on sign-in.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -725,39 +658,65 @@ export default function AdminRolesPermissionsClient() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white text-sm text-slate-700">
-                        {draftPermissions.map((permission) => {
-                          const moduleDefinition = moduleDefinitions.find((item) => item.key === permission.moduleKey);
-                          const Icon = moduleDefinition?.Icon ?? ShieldCheck;
-
-                          return (
-                            <tr key={permission.moduleKey}>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-3">
-                                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[var(--color-active-menu)]">
-                                    <Icon className="h-4 w-4" />
-                                  </span>
-                                  <span className="font-semibold text-slate-900">{displayModuleLabel(permission.moduleKey)}</span>
-                                </div>
+                        {permissionGroups.map((group, groupIndex) => (
+                          <Fragment key={`${group.section}-${group.permissions[0]?.moduleKey ?? groupIndex}`}>
+                            <tr className="bg-slate-50/80">
+                              <td
+                                colSpan={7}
+                                className="px-4 py-2 text-[0.66rem] font-bold uppercase tracking-[0.16em] text-slate-400"
+                              >
+                                {group.section}
                               </td>
-                              <td className="px-4 py-3 text-center">
-                                <button
-                                  type="button"
-                                  disabled={isSaving}
-                                  onClick={() => handleToggleView(permission.moduleKey, !permission.canView)}
-                                  className="rounded-lg p-1 transition hover:bg-blue-50 disabled:opacity-60"
-                                  aria-label={`Toggle view permission for ${displayModuleLabel(permission.moduleKey)}`}
-                                >
-                                  {permissionIndicator(permission.canView)}
-                                </button>
-                              </td>
-                              <td className="px-4 py-3 text-center opacity-60">{permissionIndicator(permission.canCreate)}</td>
-                              <td className="px-4 py-3 text-center opacity-60">{permissionIndicator(permission.canEdit)}</td>
-                              <td className="px-4 py-3 text-center opacity-60">{permissionIndicator(permission.canDelete)}</td>
-                              <td className="px-4 py-3 text-center opacity-60">{permissionIndicator(permission.canApprove)}</td>
-                              <td className="px-4 py-3 text-center opacity-60">{permissionIndicator(permission.canPublish)}</td>
                             </tr>
-                          );
-                        })}
+                            {group.permissions.map((permission) => {
+                              const moduleDefinition = getPermissionModule(permission.moduleKey);
+                              const Icon = moduleDefinition?.Icon ?? ShieldCheck;
+
+                              return (
+                                <tr key={permission.moduleKey}>
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-3">
+                                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[var(--color-active-menu)]">
+                                        <Icon className="h-4 w-4" />
+                                      </span>
+                                      <span className="min-w-0 font-semibold text-slate-900">
+                                        {displayModuleLabel(permission.moduleKey)}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button
+                                      type="button"
+                                      disabled={isSaving}
+                                      onClick={() =>
+                                        handleToggleView(permission.moduleKey, !permission.canView)
+                                      }
+                                      className="rounded-lg p-1 transition hover:bg-blue-50 disabled:opacity-60"
+                                      aria-label={`Toggle view permission for ${displayModuleLabel(permission.moduleKey)}`}
+                                    >
+                                      {permissionIndicator(permission.canView)}
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-3 text-center opacity-60">
+                                    {permissionIndicator(permission.canCreate)}
+                                  </td>
+                                  <td className="px-4 py-3 text-center opacity-60">
+                                    {permissionIndicator(permission.canEdit)}
+                                  </td>
+                                  <td className="px-4 py-3 text-center opacity-60">
+                                    {permissionIndicator(permission.canDelete)}
+                                  </td>
+                                  <td className="px-4 py-3 text-center opacity-60">
+                                    {permissionIndicator(permission.canApprove)}
+                                  </td>
+                                  <td className="px-4 py-3 text-center opacity-60">
+                                    {permissionIndicator(permission.canPublish)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </Fragment>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -891,7 +850,7 @@ export default function AdminRolesPermissionsClient() {
                   setCreateRoleForm((current) => ({ ...current, name: event.target.value }))
                 }
                 className={inputClassName}
-                placeholder="e.g. Branch Manager"
+                placeholder="e.g. Location Manager"
               />
             </FormField>
             <FormField label="Role Code">
@@ -917,16 +876,18 @@ export default function AdminRolesPermissionsClient() {
               </FormField>
             </div>
             <FormField label="Role Type">
-              <select
+              <DropdownSelect
                 value={createRoleForm.type}
-                onChange={(event) =>
-                  setCreateRoleForm((current) => ({ ...current, type: event.target.value as RoleType }))
-                }
-                className={inputClassName}
-              >
-                <option value="CUSTOM">Custom</option>
-                <option value="SYSTEM">System</option>
-              </select>
+                onChange={(value) => {
+                  if (value) setCreateRoleForm((current) => ({ ...current, type: value as RoleType }));
+                }}
+                options={[
+                  { value: "CUSTOM", label: "Custom" },
+                  { value: "SYSTEM", label: "System" },
+                ]}
+                allowClear={false}
+                aria-label="Role Type"
+              />
             </FormField>
           </div>
 
@@ -987,16 +948,18 @@ export default function AdminRolesPermissionsClient() {
               </FormField>
             </div>
             <FormField label="Role Type">
-              <select
+              <DropdownSelect
                 value={editRoleForm.type}
-                onChange={(event) =>
-                  setEditRoleForm((current) => ({ ...current, type: event.target.value as RoleType }))
-                }
-                className={inputClassName}
-              >
-                <option value="CUSTOM">Custom</option>
-                <option value="SYSTEM">System</option>
-              </select>
+                onChange={(value) => {
+                  if (value) setEditRoleForm((current) => ({ ...current, type: value as RoleType }));
+                }}
+                options={[
+                  { value: "CUSTOM", label: "Custom" },
+                  { value: "SYSTEM", label: "System" },
+                ]}
+                allowClear={false}
+                aria-label="Role Type"
+              />
             </FormField>
           </div>
 

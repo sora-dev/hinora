@@ -3,24 +3,11 @@ import Image from "next/image";
 import type { LucideIcon } from "lucide-react";
 import { Bell, Menu } from "lucide-react";
 import GlobalCommandBar from "./global-command-bar";
-import ProfileDropdown from "./profile-dropdown";
+import SessionProfileDropdown from "./session-profile-dropdown";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
-
-export type DashboardNavItem = {
-  label: string;
-  Icon: LucideIcon;
-  active?: boolean;
-  badge?: string;
-  href?: string;
-};
-
-export type DashboardNavSection = {
-  label?: string;
-  items: readonly DashboardNavItem[];
-};
 
 type BrandLockupProps = {
   paddingClassName?: string;
@@ -44,134 +31,6 @@ export function BrandLockup({
         />
       </div>
       <span className={cx("sr-only", subtitleClassName)}>Hinora AI Policy Library</span>
-    </div>
-  );
-}
-
-type DashboardSidebarProps = {
-  sections: readonly DashboardNavSection[];
-  footer?: ReactNode;
-  className?: string;
-  navClassName?: string;
-  brandPaddingClassName?: string;
-  brandSubtitleClassName?: string;
-};
-
-export function DashboardSidebar({
-  sections,
-  footer,
-  className,
-  navClassName,
-  brandPaddingClassName,
-  brandSubtitleClassName,
-}: DashboardSidebarProps) {
-  return (
-    <aside
-      className={cx(
-        "hidden px-4 py-[22px] text-white xl:flex xl:flex-col",
-        className,
-      )}
-    >
-      <BrandLockup
-        paddingClassName={brandPaddingClassName}
-        subtitleClassName={brandSubtitleClassName}
-      />
-
-      <nav className={cx("flex flex-1 flex-col gap-[18px] overflow-y-auto pr-1", navClassName)}>
-        {sections.map((section, sectionIndex) => (
-          <div key={section.label ?? `section-${sectionIndex}`} className="space-y-2">
-            {section.label ? (
-              <div className="px-2 text-[0.68rem] font-bold tracking-[0.14em] text-slate-200/50">
-                {section.label}
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              {section.items.map((item) => (
-                <a
-                  key={item.label}
-                  href={item.href ?? "#"}
-                  className={cx(
-                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[0.95rem] font-semibold transition",
-                    item.active
-                      ? "bg-[var(--color-active-menu)] text-white shadow-[0_12px_26px_rgba(37,99,235,0.28)]"
-                      : "text-white/88 hover:bg-[var(--color-hover)]",
-                  )}
-                >
-                  <item.Icon className="h-[18px] w-[18px]" />
-                  <span>{item.label}</span>
-                  {item.badge ? (
-                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-active-menu)] px-1 text-[0.7rem] font-bold text-white">
-                      {item.badge}
-                    </span>
-                  ) : null}
-                </a>
-              ))}
-            </div>
-          </div>
-        ))}
-      </nav>
-
-      {footer ? <div className="pt-4">{footer}</div> : null}
-    </aside>
-  );
-}
-
-type DashboardMobileNavProps = {
-  sections: readonly DashboardNavSection[];
-  className?: string;
-};
-
-export function DashboardMobileNav({
-  sections,
-  className,
-}: DashboardMobileNavProps) {
-  return (
-    <div className={cx("border-b border-slate-200 bg-white px-4 py-3 xl:hidden", className)}>
-      <details className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
-          <span className="inline-flex items-center gap-2">
-            <Menu className="h-4 w-4" />
-            Navigation
-          </span>
-          <span className="text-slate-400 transition group-open:rotate-180">⌄</span>
-        </summary>
-
-        <div className="mt-3 space-y-3">
-          {sections.map((section, sectionIndex) => (
-            <div key={section.label ?? `mobile-section-${sectionIndex}`} className="space-y-2">
-              {section.label ? (
-                <div className="px-1 text-[0.68rem] font-bold tracking-[0.14em] text-slate-400">
-                  {section.label}
-                </div>
-              ) : null}
-
-              <div className="grid gap-2 sm:grid-cols-2">
-                {section.items.map((item) => (
-                  <a
-                    key={item.label}
-                    href={item.href ?? "#"}
-                    className={cx(
-                      "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-semibold transition",
-                      item.active
-                        ? "border-[var(--color-active-menu)] bg-blue-50 text-[var(--color-active-menu)]"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-[var(--color-active-menu)]/40 hover:bg-slate-50",
-                    )}
-                  >
-                    <item.Icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                    {item.badge ? (
-                      <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-active-menu)] px-1 text-[0.7rem] font-bold text-white">
-                        {item.badge}
-                      </span>
-                    ) : null}
-                  </a>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </details>
     </div>
   );
 }
@@ -249,7 +108,7 @@ export function DashboardTopbar({
           </button>
         ) : null}
 
-        <ProfileDropdown
+        <SessionProfileDropdown
           profileName={profileName}
           profileRole={profileRole}
           avatarText={avatarText}
@@ -263,6 +122,8 @@ export function DashboardTopbar({
 type DashboardPanelProps = {
   title: string;
   action?: string;
+  /** Renders the action as a button instead of a link. */
+  onAction?: () => void;
   children: ReactNode;
   className?: string;
 };
@@ -270,9 +131,12 @@ type DashboardPanelProps = {
 export function DashboardPanel({
   title,
   action,
+  onAction,
   children,
   className,
 }: DashboardPanelProps) {
+  const actionClassName = "text-[0.85rem] font-bold text-[var(--color-active-menu)]";
+
   return (
     <article
       className={cx(
@@ -282,8 +146,12 @@ export function DashboardPanel({
     >
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 className="text-[1.08rem] font-bold text-slate-900">{title}</h2>
-        {action ? (
-          <a href="#" className="text-[0.85rem] font-bold text-[var(--color-active-menu)]">
+        {action && onAction ? (
+          <button type="button" onClick={onAction} className={actionClassName}>
+            {action}
+          </button>
+        ) : action ? (
+          <a href="#" className={actionClassName}>
             {action}
           </a>
         ) : null}

@@ -110,6 +110,7 @@ export default function Home() {
             accessToken?: string;
             redirectTo?: string;
             user?: {
+              id: string;
               email: string;
               role: string;
               roleTitle: string;
@@ -124,6 +125,7 @@ export default function Home() {
 
       const sessionPayload = {
         accessToken: payload.accessToken,
+        userId: payload.user.id,
         email: payload.user.email,
         role: payload.user.role,
         roleTitle: payload.user.roleTitle,

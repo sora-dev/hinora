@@ -55,6 +55,28 @@ enum PolicyAnalysisProvider {
   LOCAL_FALLBACK
 }
 
+enum AssessmentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AssessmentQuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+}
+
+enum AssessmentDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum AssessmentQuestionSource {
+  MANUAL
+  AI_GENERATED
+}
+
 model User {
   id          String     @id @default(uuid())
   email       String     @unique
@@ -63,16 +85,19 @@ model User {
   firstName   String
   lastName    String
   department  String
-  role        Role       @default(EMPLOYEE)
-  roleTitle   String
-  status      UserStatus @default(ACTIVE)
-  lastLoginAt DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  jobTitle            String?
+  role                Role       @default(EMPLOYEE)
+  roleTitle           String
+  status              UserStatus @default(ACTIVE)
+  mustChangePassword  Boolean    @default(false)
+  lastLoginAt         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   // Relations
-  certificates Certificate[]
-  testResults  TestResult[]
+  certificates     Certificate[]
+  testResults      TestResult[]
+  readingProgress  PolicyReadingProgress[]
 }
 
 model Category {
@@ -153,22 +178,97 @@ model Policy {
   categoryId          String?
 
   // Relations
-  category     Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  questions    Question[]
-  testResults  TestResult[]
-  certificates Certificate[]
+  category         Category?               @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  assessment       Assessment?
+  testResults      TestResult[]
+  certificates     Certificate[]
+  readingProgress  PolicyReadingProgress[]
 }
 
-model Question {
-  id       String   @id @default(uuid())
-  policyId String
-  text     String   // The question text
-  options  String[] // Multiple choice options (JSON array)
-  answer   Int      // Index of correct option in options array
-  order    Int      // Order of question in test
+/// Per-user reading progress for a policy (Continue Reading + reader unlock).
+model PolicyReadingProgress {
+  id                 String    @id @default(uuid())
+  userId             String
+  policyId           String
+  progressPercent    Int       @default(0)
+  pagesViewed        Int       @default(0)
+  scrollDepthPercent Int       @default(0)
+  timeSpentSeconds   Int       @default(0)
+  lastAccessedAt     DateTime  @default(now())
+  completedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, policyId])
+  @@index([userId, lastAccessedAt])
+}
+
+/// The acknowledgement assessment attached to a policy. One per policy.
+model Assessment {
+  id           String           @id @default(uuid())
+  policyId     String           @unique
+  title        String
+  description  String?
+  instructions String?
+  status       AssessmentStatus @default(DRAFT)
+
+  passingScore     Int @default(80)
+  /// 0 means unlimited attempts.
+  maximumAttempts  Int @default(0)
+  /// 0 means no time limit.
+  timeLimitMinutes Int @default(20)
+  retakeWaitHours  Int @default(0)
+
+  randomizeQuestions         Boolean @default(true)
+  shuffleAnswerChoices       Boolean @default(true)
+  showExplanationAfterAnswer Boolean @default(true)
+  allowReviewAfterSubmission Boolean @default(true)
+  showScoreImmediately       Boolean @default(true)
+  requirePassToAcknowledge   Boolean @default(true)
+  issueCertificateOnPass     Boolean @default(true)
+  notifyOnFailure            Boolean @default(false)
+
+  createdBy String
+  updatedBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policy    Policy               @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  questions AssessmentQuestion[]
+}
+
+model AssessmentQuestion {
+  id           String                   @id @default(uuid())
+  assessmentId String
+  type         AssessmentQuestionType   @default(MULTIPLE_CHOICE)
+  prompt       String
+  explanation  String?
+  points       Int                      @default(1)
+  difficulty   AssessmentDifficulty     @default(MEDIUM)
+  source       AssessmentQuestionSource @default(MANUAL)
+  order        Int
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  assessment Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  options    AssessmentQuestionOption[]
+
+  @@index([assessmentId, order])
+}
+
+model AssessmentQuestionOption {
+  id         String  @id @default(uuid())
+  questionId String
+  text       String
+  isCorrect  Boolean @default(false)
+  order      Int
+
+  question AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId, order])
 }
 
 model TestResult {
