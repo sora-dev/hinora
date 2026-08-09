@@ -1,14 +1,12 @@
 /**
  * Location-scope helpers for Departments.
- * Location records live in the Location module mock data until a `/locations` API exists.
+ * Location records are loaded from `/locations` (or `/locations/options`).
  */
 import {
   getLocationById,
   getLocationScopeHelp,
   getLocationScopeLabel,
-  MOCK_LOCATIONS,
   ORGANIZATION_WIDE_SCOPE,
-  type LocationRecord,
   type LocationStatus,
 } from "../locations/location-data";
 
@@ -26,13 +24,3 @@ export {
   getLocationScopeHelp,
   getLocationById,
 };
-
-export const LOCATION_OPTIONS: readonly LocationOption[] = MOCK_LOCATIONS.map(
-  (location: LocationRecord) => ({
-    id: location.id,
-    name: location.name,
-    code: location.code,
-    city: location.city,
-    status: location.status,
-  }),
-);

@@ -44,6 +44,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import DashboardShell from "../dashboard/dashboard-shell";
+import { ModuleGuide } from "../dashboard/module-guide";
 import { getHinoraSession } from "../dashboard/session";
 import type { NavVariant } from "../dashboard/navigation";
 import { DropdownSelect } from "../ui/dropdown-select";
@@ -1466,6 +1467,8 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
             ) : null}
           </aside>
         </div>
+
+        <ModuleGuide guideKey="Profile" />
       </div>
     </DashboardShell>
   );

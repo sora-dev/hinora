@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowRight, Hammer, Sparkles } from "lucide-react";
 import DashboardShell from "./dashboard-shell";
+import { ModuleGuide } from "./module-guide";
 import { getAskHinoraHref, getNavSections, isNavItemActive, type NavVariant } from "./navigation";
 
 type ComingSoonProps = {
@@ -59,6 +60,10 @@ export default function ComingSoon({ variant, description }: ComingSoonProps) {
             </Link>
           </div>
         </div>
+
+        {variant === "admin" && activeItem?.label && activeItem.label !== "Dashboard" ? (
+          <ModuleGuide guideKey={activeItem.moduleKey ?? activeItem.label} />
+        ) : null}
       </div>
     </DashboardShell>
   );

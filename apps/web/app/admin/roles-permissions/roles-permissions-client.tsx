@@ -20,6 +20,8 @@ import {
   DashboardSidebar,
 } from "../../../components/dashboard/dashboard-nav";
 import { DropdownSelect } from "../../../components/ui/dropdown-select";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { ModuleGuide } from "../../../components/dashboard/module-guide";
 import {
   displayModuleLabel,
   getPermissionModule,
@@ -552,29 +554,65 @@ export default function AdminRolesPermissionsClient() {
                 </div>
 
                 <div className="px-4 py-4">
-                  <div className="mb-3 text-[0.72rem] font-bold uppercase tracking-[0.12em] text-slate-400">System Roles</div>
-                  <div className="space-y-2">
-                    {filteredRoles.filter((role) => role.type === "SYSTEM").map((role) => (
-                      <RoleListItem
-                        key={role.id}
-                        role={role}
-                        active={selectedRoleId === role.id}
-                        onSelect={() => setSelectedRoleId(role.id)}
-                      />
-                    ))}
-                  </div>
+                  {rolesResponse.length === 0 ? (
+                    <EmptyState
+                      icon={ShieldCheck}
+                      title="No roles have been added yet."
+                      description="Roles control which modules and actions each user can access in Hinora."
+                      actionLabel="Create First Role"
+                      onAction={() => setShowCreateRoleModal(true)}
+                      className="py-10"
+                    />
+                  ) : filteredRoles.length === 0 ? (
+                    <EmptyState
+                      icon={Search}
+                      title="No matching roles"
+                      description="Try another search term to find a system or custom role."
+                      actionLabel="Clear search"
+                      onAction={() => setSearchInput("")}
+                      className="py-10"
+                    />
+                  ) : (
+                    <>
+                      <div className="mb-3 text-[0.72rem] font-bold uppercase tracking-[0.12em] text-slate-400">
+                        System Roles
+                      </div>
+                      <div className="space-y-2">
+                        {filteredRoles
+                          .filter((role) => role.type === "SYSTEM")
+                          .map((role) => (
+                            <RoleListItem
+                              key={role.id}
+                              role={role}
+                              active={selectedRoleId === role.id}
+                              onSelect={() => setSelectedRoleId(role.id)}
+                            />
+                          ))}
+                      </div>
 
-                  <div className="mb-3 mt-5 text-[0.72rem] font-bold uppercase tracking-[0.12em] text-slate-400">Custom Roles</div>
-                  <div className="space-y-2">
-                    {filteredRoles.filter((role) => role.type === "CUSTOM").map((role) => (
-                      <RoleListItem
-                        key={role.id}
-                        role={role}
-                        active={selectedRoleId === role.id}
-                        onSelect={() => setSelectedRoleId(role.id)}
-                      />
-                    ))}
-                  </div>
+                      <div className="mb-3 mt-5 text-[0.72rem] font-bold uppercase tracking-[0.12em] text-slate-400">
+                        Custom Roles
+                      </div>
+                      <div className="space-y-2">
+                        {filteredRoles.filter((role) => role.type === "CUSTOM").length === 0 ? (
+                          <p className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-500">
+                            No custom roles yet. Create one to tailor access for your teams.
+                          </p>
+                        ) : (
+                          filteredRoles
+                            .filter((role) => role.type === "CUSTOM")
+                            .map((role) => (
+                              <RoleListItem
+                                key={role.id}
+                                role={role}
+                                active={selectedRoleId === role.id}
+                                onSelect={() => setSelectedRoleId(role.id)}
+                              />
+                            ))
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </DashboardPanel>
 
@@ -833,6 +871,7 @@ export default function AdminRolesPermissionsClient() {
               </div>
             </DashboardPanel>
           )}
+          <ModuleGuide guideKey="Roles & Permissions" />
         </div>
       </section>
 

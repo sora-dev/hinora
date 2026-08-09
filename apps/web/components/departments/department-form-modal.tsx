@@ -17,13 +17,17 @@ import {
 } from "lucide-react";
 import { DropdownSelect } from "../ui/dropdown-select";
 import {
-  LOCATION_OPTIONS,
   getLocationScopeHelp,
   ORGANIZATION_WIDE_SCOPE,
+  type LocationOption,
 } from "./location-options";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 const DESCRIPTION_MAX = 500;
+
+type LocationsOptionsResponse = {
+  data: LocationOption[];
+};
 
 export type DepartmentFormStatus = "Active" | "Inactive";
 
@@ -420,16 +424,45 @@ export default function DepartmentFormModal({
     ...initialValues,
   }));
   const [selectedHead, setSelectedHead] = useState<DepartmentHeadOption | null>(initialHead);
+  const [locationRecords, setLocationRecords] = useState<LocationOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocations() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/locations/options`);
+        if (!response.ok) {
+          throw new Error("Unable to load locations.");
+        }
+        const payload = (await response.json()) as LocationsOptionsResponse;
+        if (!cancelled) {
+          setLocationRecords(payload.data ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocationRecords([]);
+        }
+      }
+    }
+
+    void loadLocations();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const locationOptions = useMemo(
     () => [
       { value: ORGANIZATION_WIDE_SCOPE, label: "Organization-wide" },
-      ...LOCATION_OPTIONS.filter((location) => location.status === "Active").map((location) => ({
-        value: location.id,
-        label: `${location.name} · ${location.city}`,
-      })),
+      ...locationRecords
+        .filter((location) => location.status === "Active" || location.status === "Maintenance")
+        .map((location) => ({
+          value: location.id,
+          label: `${location.name} · ${location.city}`,
+        })),
     ],
-    [],
+    [locationRecords],
   );
 
   const parentOptions = useMemo(
@@ -602,7 +635,28 @@ export default function DepartmentFormModal({
                   leadingIcon={Globe2}
                   aria-label="Location scope"
                 />
-                <HelpText>{getLocationScopeHelp(values.locationScope)}</HelpText>
+                <HelpText>
+                  {getLocationScopeHelp(
+                    values.locationScope,
+                    locationRecords.map((location) => ({
+                      id: location.id,
+                      name: location.name,
+                      code: location.code,
+                      subtitle: location.city,
+                      streetAddress: "",
+                      city: location.city,
+                      province: "",
+                      postalCode: "",
+                      email: "",
+                      phone: "",
+                      description: "",
+                      manager: { name: "", email: "", initials: "" },
+                      employees: 0,
+                      departments: 0,
+                      status: location.status,
+                    })),
+                  )}
+                </HelpText>
               </label>
 
               <label className="block sm:col-span-2">

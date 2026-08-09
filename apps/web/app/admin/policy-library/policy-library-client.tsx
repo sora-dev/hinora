@@ -23,6 +23,8 @@ import {
   DashboardSidebar,
 } from "../../../components/dashboard/dashboard-nav";
 import { DropdownSelect } from "../../../components/ui/dropdown-select";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { ModuleGuide } from "../../../components/dashboard/module-guide";
 import UploadPolicyWizard, {
   type UploadWizardSubmitPayload,
 } from "../../../components/policy-library/upload-policy-wizard";
@@ -451,8 +453,29 @@ export default function AdminPolicyLibraryClient() {
                     </tr>
                   ) : policies.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                        No policies found for the current filters.
+                      <td colSpan={8} className="p-0">
+                        {(data?.stats.totalPolicies ?? 0) === 0 ? (
+                          <EmptyState
+                            icon={Files}
+                            title="No policies have been added yet."
+                            description="Upload your first policy document so teams can review, acknowledge, and stay compliant."
+                            actionLabel="Upload First Policy"
+                            onAction={() => setShowUploadModal(true)}
+                          />
+                        ) : (
+                          <EmptyState
+                            icon={Search}
+                            title="No matching policies"
+                            description="Try another search term or clear filters to see all policies."
+                            actionLabel="Clear filters"
+                            onAction={() => {
+                              setSearch("");
+                              setCategoryFilter("");
+                              setStatusFilter("");
+                            }}
+                            className="py-12"
+                          />
+                        )}
                       </td>
                     </tr>
                   ) : (
@@ -549,6 +572,7 @@ export default function AdminPolicyLibraryClient() {
               </table>
             </div>
           </DashboardPanel>
+          <ModuleGuide guideKey="Policy Management" />
         </div>
       </section>
 

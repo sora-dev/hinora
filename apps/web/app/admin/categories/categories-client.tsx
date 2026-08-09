@@ -35,6 +35,8 @@ import {
   DropdownSelect,
   type DropdownOption,
 } from "../../../components/ui/dropdown-select";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { ModuleGuide } from "../../../components/dashboard/module-guide";
 
 type CategoryStatus = "ACTIVE" | "INACTIVE";
 
@@ -901,11 +903,24 @@ export default function AdminCategoriesClient() {
           />
           <DashboardMobileNav variant="admin" />
           <div className="px-4 py-8 md:px-5">
-            <DashboardPanel title="Categories">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                No categories are available yet. Create a parent category to get started.
+            <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">Categories</h1>
+                <p className="mt-1 text-sm text-slate-500">
+                  Organize policies into a clear category structure.
+                </p>
               </div>
+            </div>
+            <DashboardPanel title="Categories" className="p-0">
+              <EmptyState
+                icon={FolderTree}
+                title="No categories have been added yet."
+                description="Categories help group policies so teams can find and assign the right documents."
+                actionLabel="Add First Category"
+                onAction={() => openCreateModal(null, "parent")}
+              />
             </DashboardPanel>
+            <ModuleGuide guideKey="Categories" />
           </div>
         </section>
       </main>
@@ -1374,6 +1389,7 @@ export default function AdminCategoriesClient() {
               </DashboardPanel>
             </div>
           </div>
+          <ModuleGuide guideKey="Categories" />
         </div>
       </section>
 

@@ -15,13 +15,50 @@ type CreateUserInput = {
   password: string;
   firstName: string;
   lastName: string;
+  preferredName: string | null;
+  phone: string | null;
+  employeeId: string | null;
   department: string;
+  departmentId: string | null;
+  locationId: string | null;
   jobTitle?: string | null;
+  reportsToUserId: string | null;
+  dateHired: Date | null;
   role: Role;
   roleTitle: string;
   status: UserStatus;
 };
 type UpdateUserInput = Partial<Omit<CreateUserInput, 'password'>>;
+
+type UserWithRelations = User & {
+  departmentRef: { id: string; name: string; code: string } | null;
+  locationRef: { id: string; name: string; code: string } | null;
+  reportsTo: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    jobTitle: string | null;
+  } | null;
+};
+
+const userInclude = {
+  departmentRef: {
+    select: { id: true, name: true, code: true },
+  },
+  locationRef: {
+    select: { id: true, name: true, code: true },
+  },
+  reportsTo: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      jobTitle: true,
+    },
+  },
+} as const;
 
 @Injectable()
 export class UsersService {
@@ -36,7 +73,8 @@ export class UsersService {
     const search = query.search?.trim();
     const status = this.parseOptionalStatus(query.status);
     const roleTitle = this.normalizeOptionalString(query.role);
-    const department = this.normalizeOptionalString(query.department);
+    const departmentFilter = this.normalizeOptionalString(query.department);
+    const locationFilter = this.normalizeOptionalString(query.location);
 
     const where: Prisma.UserWhereInput = {
       AND: [
@@ -49,36 +87,65 @@ export class UsersService {
                 { username: { contains: search, mode: 'insensitive' } },
                 { department: { contains: search, mode: 'insensitive' } },
                 { roleTitle: { contains: search, mode: 'insensitive' } },
+                { employeeId: { contains: search, mode: 'insensitive' } },
+                { preferredName: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search, mode: 'insensitive' } },
               ],
             }
           : {},
         status ? { status } : {},
         roleTitle ? { roleTitle } : {},
-        department ? { department } : {},
+        departmentFilter
+          ? {
+              OR: [
+                { departmentId: departmentFilter },
+                { department: departmentFilter },
+              ],
+            }
+          : {},
+        locationFilter
+          ? {
+              OR: [
+                { locationId: locationFilter },
+                { locationRef: { name: locationFilter } },
+              ],
+            }
+          : {},
       ],
     };
 
-    const [users, total, allUsers, departments, roleTitles] = await Promise.all(
-      [
+    const [users, total, allUsers, departments, locations, roleTitles] =
+      await Promise.all([
         this.prisma.user.findMany({
           where,
+          include: userInclude,
           orderBy: [{ createdAt: 'desc' }],
           skip: (page - 1) * pageSize,
           take: pageSize,
         }),
         this.prisma.user.count({ where }),
-        this.prisma.user.findMany(),
         this.prisma.user.findMany({
-          distinct: ['department'],
-          select: { department: true },
-          orderBy: { department: 'asc' },
+          select: { status: true },
+        }),
+        this.prisma.department.findMany({
+          where: { status: 'ACTIVE' },
+          select: { id: true, name: true, code: true },
+          orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+        }),
+        this.prisma.location.findMany({
+          where: {
+            status: {
+              in: ['ACTIVE', 'MAINTENANCE'],
+            },
+          },
+          select: { id: true, name: true, code: true },
+          orderBy: [{ name: 'asc' }],
         }),
         this.prisma.roleDefinition.findMany({
           select: { name: true },
           orderBy: [{ type: 'asc' }, { name: 'asc' }],
         }),
-      ],
-    );
+      ]);
 
     const stats = {
       totalUsers: allUsers.length,
@@ -95,7 +162,10 @@ export class UsersService {
       data: users.map((user) => this.toUserResponse(user)),
       stats,
       filters: {
-        departments: departments.map((item) => item.department),
+        departments: departments.map((item) => item.name),
+        departmentOptions: departments,
+        locations: locations.map((item) => item.name),
+        locationOptions: locations,
         roles: roleTitles.map((item) => item.name),
         statuses: Object.values(UserStatus),
       },
@@ -109,7 +179,7 @@ export class UsersService {
   }
 
   async createUser(body: Record<string, unknown>) {
-    const input = this.parseCreateInput(body);
+    const input = await this.parseCreateInput(body);
     await this.rolesPermissionsService.assertRoleTitleExists(input.roleTitle);
     const hashedPassword = await bcrypt.hash(input.password, 10);
 
@@ -121,8 +191,15 @@ export class UsersService {
           password: hashedPassword,
           firstName: input.firstName,
           lastName: input.lastName,
+          preferredName: input.preferredName,
+          phone: input.phone,
+          employeeId: input.employeeId,
           department: input.department,
+          departmentId: input.departmentId,
+          locationId: input.locationId,
           jobTitle: input.jobTitle ?? null,
+          reportsToUserId: input.reportsToUserId,
+          dateHired: input.dateHired,
           role: input.role,
           roleTitle: input.roleTitle,
           status: input.status,
@@ -131,6 +208,7 @@ export class UsersService {
               ? body.mustChangePassword
               : true,
         },
+        include: userInclude,
       });
 
       return this.toUserResponse(user);
@@ -165,7 +243,11 @@ export class UsersService {
 
   async updateUser(id: string, body: Record<string, unknown>) {
     await this.ensureUserExists(id);
-    const input = this.parseUpdateInput(body);
+    const input = await this.parseUpdateInput(body);
+
+    if (input.reportsToUserId && input.reportsToUserId === id) {
+      throw new BadRequestException('A user cannot report to themselves.');
+    }
 
     if (input.roleTitle) {
       await this.rolesPermissionsService.assertRoleTitleExists(input.roleTitle);
@@ -175,6 +257,7 @@ export class UsersService {
       const user = await this.prisma.user.update({
         where: { id },
         data: input,
+        include: userInclude,
       });
 
       return this.toUserResponse(user);
@@ -190,6 +273,7 @@ export class UsersService {
     const user = await this.prisma.user.update({
       where: { id },
       data: { status },
+      include: userInclude,
     });
 
     return this.toUserResponse(user);
@@ -220,21 +304,43 @@ export class UsersService {
     const user = await this.prisma.user.update({
       where: { id },
       data,
+      include: userInclude,
     });
 
     return this.toUserResponse(user);
   }
 
-  private toUserResponse(user: User) {
+  private toUserResponse(user: UserWithRelations | User) {
+    const departmentRef =
+      'departmentRef' in user ? user.departmentRef : null;
+    const locationRef = 'locationRef' in user ? user.locationRef : null;
+    const reportsTo = 'reportsTo' in user ? user.reportsTo : null;
+
     return {
       id: user.id,
       email: user.email,
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
+      preferredName: user.preferredName,
+      phone: user.phone,
+      employeeId: user.employeeId,
       fullName: `${user.firstName} ${user.lastName}`.trim(),
-      department: user.department,
+      department: departmentRef?.name ?? user.department,
+      departmentId: user.departmentId,
+      locationId: user.locationId,
+      location: locationRef?.name ?? null,
       jobTitle: user.jobTitle,
+      reportsToUserId: user.reportsToUserId,
+      reportsTo: reportsTo
+        ? {
+            id: reportsTo.id,
+            fullName: `${reportsTo.firstName} ${reportsTo.lastName}`.trim(),
+            email: reportsTo.email,
+            jobTitle: reportsTo.jobTitle,
+          }
+        : null,
+      dateHired: user.dateHired,
       role: user.role,
       roleTitle: user.roleTitle,
       status: user.status,
@@ -253,8 +359,87 @@ export class UsersService {
     }
   }
 
-  private parseCreateInput(body: Record<string, unknown>): CreateUserInput {
+  private async resolveDepartmentAssignment(body: Record<string, unknown>) {
+    const departmentIdValue = body.departmentId;
+    const departmentNameValue = body.department;
+
+    if (departmentIdValue !== undefined && departmentIdValue !== null) {
+      if (typeof departmentIdValue !== 'string' || !departmentIdValue.trim()) {
+        throw new BadRequestException('departmentId must be a valid id.');
+      }
+
+      const department = await this.prisma.department.findUnique({
+        where: { id: departmentIdValue.trim() },
+        select: { id: true, name: true },
+      });
+
+      if (!department) {
+        throw new BadRequestException('Selected department was not found.');
+      }
+
+      return {
+        departmentId: department.id,
+        department: department.name,
+      };
+    }
+
+    if (typeof departmentNameValue === 'string' && departmentNameValue.trim()) {
+      const name = departmentNameValue.trim();
+      const department = await this.prisma.department.findFirst({
+        where: { name: { equals: name, mode: 'insensitive' } },
+        select: { id: true, name: true },
+      });
+
+      return {
+        departmentId: department?.id ?? null,
+        department: department?.name ?? name,
+      };
+    }
+
+    return null;
+  }
+
+  private async resolveLocationAssignment(body: Record<string, unknown>) {
+    if (body.locationId === undefined) {
+      return undefined;
+    }
+
+    if (body.locationId === null || body.locationId === '') {
+      return null;
+    }
+
+    if (typeof body.locationId !== 'string') {
+      throw new BadRequestException('locationId must be a string.');
+    }
+
+    const locationId = body.locationId.trim();
+    const location = await this.prisma.location.findUnique({
+      where: { id: locationId },
+      select: { id: true },
+    });
+
+    if (!location) {
+      throw new BadRequestException('Selected location was not found.');
+    }
+
+    return location.id;
+  }
+
+  private async parseCreateInput(
+    body: Record<string, unknown>,
+  ): Promise<CreateUserInput> {
     const roleTitle = this.readRequiredString(body.roleTitle, 'roleTitle');
+    const departmentAssignment = await this.resolveDepartmentAssignment(body);
+
+    if (!departmentAssignment) {
+      throw new BadRequestException('department is required.');
+    }
+
+    const locationId = await this.resolveLocationAssignment(body);
+
+    const reportsToUserId = await this.resolveReportsToUserId(
+      body.reportsToUserId,
+    );
 
     return {
       email: this.readRequiredEmail(body.email),
@@ -262,15 +447,24 @@ export class UsersService {
       password: this.readSecurePassword(body.password, 'password'),
       firstName: this.readRequiredString(body.firstName, 'firstName'),
       lastName: this.readRequiredString(body.lastName, 'lastName'),
-      department: this.readRequiredString(body.department, 'department'),
+      preferredName: this.parseOptionalText(body.preferredName),
+      phone: this.parseOptionalText(body.phone),
+      employeeId: this.parseOptionalText(body.employeeId),
+      department: departmentAssignment.department,
+      departmentId: departmentAssignment.departmentId,
+      locationId: locationId ?? null,
       jobTitle: this.parseOptionalJobTitle(body.jobTitle),
+      reportsToUserId,
+      dateHired: this.parseOptionalDate(body.dateHired),
       role: this.parseOptionalRole(body.role) ?? this.deriveSystemRole(roleTitle),
       roleTitle,
       status: this.parseRequiredStatus(body.status),
     };
   }
 
-  private parseUpdateInput(body: Record<string, unknown>): UpdateUserInput {
+  private async parseUpdateInput(
+    body: Record<string, unknown>,
+  ): Promise<UpdateUserInput> {
     const input: UpdateUserInput = {};
 
     if (body.email !== undefined) {
@@ -289,12 +483,42 @@ export class UsersService {
       input.lastName = this.readRequiredString(body.lastName, 'lastName');
     }
 
-    if (body.department !== undefined) {
-      input.department = this.readRequiredString(body.department, 'department');
+    if (body.preferredName !== undefined) {
+      input.preferredName = this.parseOptionalText(body.preferredName);
+    }
+
+    if (body.phone !== undefined) {
+      input.phone = this.parseOptionalText(body.phone);
+    }
+
+    if (body.employeeId !== undefined) {
+      input.employeeId = this.parseOptionalText(body.employeeId);
+    }
+
+    if (body.department !== undefined || body.departmentId !== undefined) {
+      const departmentAssignment = await this.resolveDepartmentAssignment(body);
+      if (departmentAssignment) {
+        input.department = departmentAssignment.department;
+        input.departmentId = departmentAssignment.departmentId;
+      }
+    }
+
+    if (body.locationId !== undefined) {
+      input.locationId = (await this.resolveLocationAssignment(body)) ?? null;
     }
 
     if (body.jobTitle !== undefined) {
       input.jobTitle = this.parseOptionalJobTitle(body.jobTitle) ?? null;
+    }
+
+    if (body.reportsToUserId !== undefined) {
+      input.reportsToUserId = await this.resolveReportsToUserId(
+        body.reportsToUserId,
+      );
+    }
+
+    if (body.dateHired !== undefined) {
+      input.dateHired = this.parseOptionalDate(body.dateHired);
     }
 
     if (body.roleTitle !== undefined) {
@@ -313,6 +537,66 @@ export class UsersService {
     }
 
     return input;
+  }
+
+  private async resolveReportsToUserId(value: unknown) {
+    if (value === undefined) {
+      return null;
+    }
+
+    if (value === null || value === '') {
+      return null;
+    }
+
+    if (typeof value !== 'string') {
+      throw new BadRequestException('reportsToUserId must be a string.');
+    }
+
+    const userId = value.trim();
+    if (!userId) {
+      return null;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Selected reporting manager was not found.');
+    }
+
+    return userId;
+  }
+
+  private parseOptionalText(value: unknown) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    if (typeof value !== 'string') {
+      throw new BadRequestException('Expected a text value.');
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private parseOptionalDate(value: unknown) {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    if (typeof value !== 'string') {
+      throw new BadRequestException('dateHired must be a string.');
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('dateHired must be a valid date.');
+    }
+
+    return date;
   }
 
   private deriveSystemRole(roleTitle: string): Role {
@@ -460,7 +744,7 @@ export class UsersService {
       error.code === 'P2002'
     ) {
       throw new BadRequestException(
-        'A user with that email or username already exists.',
+        'A user with that email, username, or employee ID already exists.',
       );
     }
 

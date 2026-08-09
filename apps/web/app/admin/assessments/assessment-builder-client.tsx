@@ -12,6 +12,7 @@ import {
   Loader2,
   Save,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import SelectPolicyModal, {
   rememberRecentPolicy,
 } from "../../../components/assessments/select-policy-modal";
@@ -20,6 +21,8 @@ import {
   DashboardMobileNav,
   DashboardSidebar,
 } from "../../../components/dashboard/dashboard-nav";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { ModuleGuide } from "../../../components/dashboard/module-guide";
 import AiAssistantTab from "../../../components/assessments/ai-assistant-tab";
 import QuestionsTab from "../../../components/assessments/questions-tab";
 import SettingsTab from "../../../components/assessments/settings-tab";
@@ -95,6 +98,7 @@ export default function AssessmentBuilderClient({
 }: {
   initialTab?: BuilderTab;
 }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<BuilderTab>(initialTab);
 
   const [policy, setPolicy] = useState<AssessmentPolicy | null>(null);
@@ -475,11 +479,14 @@ export default function AssessmentBuilderClient({
           ) : null}
 
           {!isLoading && policyOptions.length === 0 ? (
-            <div className="mt-4 rounded-[18px] border border-dashed border-slate-300 bg-white px-4 py-12 text-center">
-              <p className="text-sm font-semibold text-slate-600">No policies available yet.</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Upload a policy in the Policy Library before building an assessment.
-              </p>
+            <div className="mt-4 overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+              <EmptyState
+                icon={FileText}
+                title="No policies have been added yet."
+                description="Upload a policy first so you can build assessments and quiz questions against it."
+                actionLabel="Go to Policy Management"
+                onAction={() => router.push("/admin/policy-management")}
+              />
             </div>
           ) : (
             <>
@@ -611,6 +618,7 @@ export default function AssessmentBuilderClient({
               )}
             </>
           )}
+          <ModuleGuide guideKey="Assessment Builder" />
         </div>
       </section>
     </main>

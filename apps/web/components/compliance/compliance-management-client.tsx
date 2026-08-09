@@ -51,6 +51,8 @@ import {
   DashboardSidebar,
 } from "../dashboard/dashboard-nav";
 import { DropdownSelect } from "../ui/dropdown-select";
+import { EmptyState } from "../ui/empty-state";
+import { ModuleGuide } from "../dashboard/module-guide";
 
 type PolicyTrackStatus = "ON_TRACK" | "AT_RISK" | "OVERDUE" | "NOT_STARTED";
 type PolicyLifecycleStatus = "DRAFT" | "UNDER_REVIEW" | "PUBLISHED" | "ARCHIVED";
@@ -3230,26 +3232,31 @@ export default function ComplianceManagementClient() {
                     </button>
                   </div>
                 ) : filteredPolicies.length === 0 ? (
-                  <div className="flex h-full min-h-[280px] flex-col items-center justify-center px-4 py-8 text-center">
-                    <p className="text-sm font-semibold text-slate-700">No matching policies</p>
-                    <p className="mt-1 max-w-[220px] text-xs leading-relaxed text-slate-500">
-                      {policySearch.trim() || hasActivePolicyFilters
-                        ? "Try another category or status, or clear filters to see all policies."
-                        : "Upload a policy in Policy Management first."}
-                    </p>
-                    {hasActivePolicyFilters ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPolicyStatusFilter("");
-                          setPolicyCategoryFilter("");
-                        }}
-                        className="mt-4 inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                      >
-                        Clear filters
-                      </button>
-                    ) : null}
-                  </div>
+                  policySearch.trim() || hasActivePolicyFilters ? (
+                    <EmptyState
+                      icon={Search}
+                      title="No matching policies"
+                      description="Try another category or status, or clear filters to see all policies."
+                      actionLabel="Clear filters"
+                      onAction={() => {
+                        setPolicySearch("");
+                        setPolicyStatusFilter("");
+                        setPolicyCategoryFilter("");
+                      }}
+                      className="min-h-[280px] py-8"
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Shield}
+                      title="No policies have been added yet."
+                      description="Upload and publish policies first so you can track acknowledgements and compliance here."
+                      actionLabel="Go to Policy Management"
+                      onAction={() => {
+                        window.location.href = "/admin/policy-management";
+                      }}
+                      className="min-h-[280px] py-8"
+                    />
+                  )
                 ) : (
                   filteredPolicies.map((policy) => {
                     const selected = policy.id === selectedPolicy?.id;
@@ -3417,6 +3424,7 @@ export default function ComplianceManagementClient() {
               ) : null}
             </div>
           </div>
+          <ModuleGuide guideKey="Compliance Center" />
         </div>
       </section>
     </main>

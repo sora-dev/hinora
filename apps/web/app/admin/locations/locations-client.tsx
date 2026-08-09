@@ -21,8 +21,6 @@ import {
   DashboardTopbar,
 } from "../../../components/dashboard/primitives";
 import {
-  MOCK_LOCATIONS,
-  toLocationSubtitle,
   type LocationRecord,
   type LocationStatus,
 } from "../../../components/locations/location-data";
@@ -33,8 +31,41 @@ import LocationFormModal, {
   type LocationManagerOption,
 } from "../../../components/locations/location-form-modal";
 import { DropdownSelect } from "../../../components/ui/dropdown-select";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { ModuleGuide } from "../../../components/dashboard/module-guide";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 const PAGE_SIZE = 5;
+
+type LocationsListResponse = {
+  data: LocationRecord[];
+};
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | T
+    | { message?: string | string[] }
+    | null;
+
+  if (!response.ok) {
+    const message = payload && typeof payload === "object" && "message" in payload
+      ? Array.isArray(payload.message)
+        ? payload.message.join(", ")
+        : payload.message
+      : "Request failed.";
+    throw new Error(message || "Request failed.");
+  }
+
+  return payload as T;
+}
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -69,7 +100,10 @@ function codeTone(code: string) {
 }
 
 export default function AdminLocationsClient() {
-  const [locations, setLocations] = useState<LocationRecord[]>(MOCK_LOCATIONS);
+  const [locations, setLocations] = useState<LocationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | LocationStatus>("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -83,6 +117,24 @@ export default function AdminLocationsClient() {
   const [formInitialManager, setFormInitialManager] = useState<LocationManagerOption | null>(null);
   const filterRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  async function loadLocations() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await requestJson<LocationsListResponse>("/locations");
+      setLocations(response.data ?? []);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Failed to load locations.");
+      setLocations([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadLocations();
+  }, []);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -173,24 +225,13 @@ export default function AdminLocationsClient() {
     setMenuOpenId(null);
   }
 
-  function handleSubmitLocation(values: LocationFormValues, manager: LocationManagerOption | null) {
-    if (!values.name.trim() || !values.code.trim()) return;
+  async function handleSubmitLocation(
+    values: LocationFormValues,
+    _manager: LocationManagerOption | null,
+  ) {
+    if (!values.name.trim() || !values.code.trim() || saving) return;
 
-    const managerRecord = manager
-      ? {
-          id: manager.id,
-          name: manager.fullName,
-          email: manager.email,
-          initials: manager.initials,
-          jobTitle: manager.jobTitle,
-        }
-      : {
-          name: "Unassigned",
-          email: "unassigned@company.com",
-          initials: "UA",
-        };
-
-    const shared = {
+    const payload = {
       name: values.name.trim(),
       code: values.code.trim().toUpperCase().slice(0, 8),
       streetAddress: values.streetAddress.trim(),
@@ -200,34 +241,31 @@ export default function AdminLocationsClient() {
       email: values.email.trim(),
       phone: values.phone.trim(),
       description: values.description.trim(),
-      subtitle: toLocationSubtitle({
-        streetAddress: values.streetAddress.trim(),
-        city: values.city.trim(),
-        province: values.province.trim(),
-      }),
-      manager: managerRecord,
       status: values.status,
+      managerUserId: values.managerUserId || null,
     };
 
-    if (formMode === "edit" && editingLocationId) {
-      setLocations((current) =>
-        current.map((location) =>
-          location.id === editingLocationId ? { ...location, ...shared } : location,
-        ),
-      );
+    setSaving(true);
+    setError(null);
+    try {
+      if (formMode === "edit" && editingLocationId) {
+        await requestJson<{ data: LocationRecord }>(`/locations/${editingLocationId}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await requestJson<{ data: LocationRecord }>("/locations", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
       closeFormModal();
-      return;
+      await loadLocations();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to save location.");
+    } finally {
+      setSaving(false);
     }
-
-    const next: LocationRecord = {
-      id: `location-${Date.now()}`,
-      ...shared,
-      employees: 0,
-      departments: 0,
-    };
-
-    setLocations((current) => [next, ...current]);
-    closeFormModal();
   }
 
   const statCards: Array<{
@@ -380,6 +418,30 @@ export default function AdminLocationsClient() {
               </div>
             </div>
 
+            {error ? (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            {loading ? (
+              <div className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500">
+                Loading locations...
+              </div>
+            ) : null}
+
+            {!loading && locations.length === 0 ? (
+              <EmptyState
+                icon={Building2}
+                title="No locations have been added yet."
+                description="Locations help organize users and policy assignments by physical location."
+                actionLabel="Add First Location"
+                onAction={openCreateModal}
+              />
+            ) : null}
+
+            {!loading && locations.length > 0 ? (
+              <>
             <div className="hidden overflow-x-auto lg:block">
               <table className="min-w-full text-left">
                 <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -518,9 +580,17 @@ export default function AdminLocationsClient() {
             </div>
 
             {filtered.length === 0 ? (
-              <div className="px-4 py-12 text-center text-sm text-slate-500">
-                No locations match your search or filters.
-              </div>
+              <EmptyState
+                icon={Search}
+                title="No matching locations"
+                description="Try another search term or clear filters to see all locations."
+                actionLabel="Clear filters"
+                onAction={() => {
+                  setSearch("");
+                  setStatusFilter("");
+                }}
+                className="py-12"
+              />
             ) : null}
 
             <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
@@ -564,7 +634,10 @@ export default function AdminLocationsClient() {
                 </button>
               </div>
             </div>
+              </>
+            ) : null}
           </article>
+          <ModuleGuide guideKey="Location" />
         </div>
       </section>
 

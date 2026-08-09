@@ -77,6 +77,17 @@ enum AssessmentQuestionSource {
   AI_GENERATED
 }
 
+enum LocationStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum DepartmentStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model User {
   id          String     @id @default(uuid())
   email       String     @unique
@@ -84,8 +95,15 @@ model User {
   password    String
   firstName   String
   lastName    String
+  preferredName        String?
+  phone               String?
+  employeeId          String?    @unique
   department  String
+  departmentId        String?
+  locationId          String?
   jobTitle            String?
+  reportsToUserId     String?
+  dateHired           DateTime?
   role                Role       @default(EMPLOYEE)
   roleTitle           String
   status              UserStatus @default(ACTIVE)
@@ -95,9 +113,62 @@ model User {
   updatedAt           DateTime   @updatedAt
 
   // Relations
-  certificates     Certificate[]
-  testResults      TestResult[]
-  readingProgress  PolicyReadingProgress[]
+  departmentRef       Department? @relation("UserDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+  locationRef         Location?   @relation("UserLocation", fields: [locationId], references: [id], onDelete: SetNull)
+  reportsTo           User?       @relation("UserReportsTo", fields: [reportsToUserId], references: [id], onDelete: SetNull)
+  directReports       User[]      @relation("UserReportsTo")
+  managedLocations    Location[]  @relation("LocationManager")
+  headedDepartments   Department[] @relation("DepartmentHead")
+  certificates        Certificate[]
+  testResults         TestResult[]
+  readingProgress     PolicyReadingProgress[]
+}
+
+model Location {
+  id            String         @id @default(uuid())
+  name          String
+  code          String         @unique
+  streetAddress String         @default("")
+  city          String         @default("")
+  province      String         @default("")
+  postalCode    String         @default("")
+  email         String         @default("")
+  phone         String         @default("")
+  description   String         @default("")
+  status        LocationStatus @default(ACTIVE)
+  managerUserId String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  manager     User?        @relation("LocationManager", fields: [managerUserId], references: [id], onDelete: SetNull)
+  departments Department[]
+  users       User[]       @relation("UserLocation")
+}
+
+model Department {
+  id                  String           @id @default(uuid())
+  name                String
+  code                String           @unique
+  description         String           @default("")
+  status              DepartmentStatus @default(ACTIVE)
+  establishedDate     DateTime?
+  displayOrder        Int              @default(1)
+  costCenter          String?
+  parentDepartmentId  String?
+  headUserId          String?
+  locationId          String?
+  isOrganizationWide  Boolean          @default(true)
+  autoAssignMandatory Boolean          @default(true)
+  enableNotifications Boolean          @default(true)
+  inheritAssignments  Boolean          @default(true)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  parent   Department?  @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: SetNull)
+  children Department[] @relation("DepartmentHierarchy")
+  head     User?        @relation("DepartmentHead", fields: [headUserId], references: [id], onDelete: SetNull)
+  location Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  users    User[]       @relation("UserDepartment")
 }
 
 model Category {

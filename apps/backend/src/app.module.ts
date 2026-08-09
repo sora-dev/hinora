@@ -4,6 +4,8 @@ import { AppService } from './app.service';
 import { AssessmentsModule } from './assessments/assessments.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
+import { DepartmentsModule } from './departments/departments.module';
+import { LocationsModule } from './locations/locations.module';
 import { PoliciesModule } from './policies/policies.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReadingProgressModule } from './reading-progress/reading-progress.module';
@@ -17,6 +19,8 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     RolesPermissionsModule,
     CategoriesModule,
+    DepartmentsModule,
+    LocationsModule,
     PoliciesModule,
     AssessmentsModule,
     ReadingProgressModule,

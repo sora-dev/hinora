@@ -1,5 +1,7 @@
 import {
   CategoryStatus,
+  DepartmentStatus,
+  LocationStatus,
   PolicyDocumentType,
   PolicyStatus,
   PrismaClient,
@@ -199,6 +201,90 @@ const rolePermissionMap: Record<
 
 const moduleKeys = moduleOrder;
 
+const seedLocations = [
+  {
+    code: 'HO',
+    name: 'Head Office',
+    streetAddress: 'Main Corporate Office',
+    city: 'La Trinidad',
+    province: 'Benguet',
+    postalCode: '2601',
+    email: 'headoffice@rbitogon.com',
+    phone: '+63 74 422 1000',
+    description:
+      'Primary corporate headquarters for company-wide operations and governance.',
+    status: LocationStatus.ACTIVE,
+  },
+  {
+    code: 'BAG',
+    name: 'Baguio',
+    streetAddress: 'Session Road',
+    city: 'Baguio City',
+    province: 'Benguet',
+    postalCode: '2600',
+    email: 'baguio@rbitogon.com',
+    phone: '+63 74 442 2200',
+    description:
+      'Northern Luzon regional office supporting local operations and client services.',
+    status: LocationStatus.ACTIVE,
+  },
+  {
+    code: 'LTR',
+    name: 'La Trinidad',
+    streetAddress: 'Km 5',
+    city: 'La Trinidad',
+    province: 'Benguet',
+    postalCode: '2601',
+    email: 'latrinidad@rbitogon.com',
+    phone: '+63 74 422 3300',
+    description:
+      'Satellite office currently under facility maintenance and staffing adjustments.',
+    status: LocationStatus.MAINTENANCE,
+  },
+] as const;
+
+const seedDepartments = [
+  {
+    code: 'IT',
+    name: 'IT Department',
+    description:
+      'Owns infrastructure, security controls, and digital systems that support company-wide policy enforcement.',
+    status: DepartmentStatus.ACTIVE,
+    isOrganizationWide: true,
+    locationCode: null as string | null,
+    displayOrder: 1,
+  },
+  {
+    code: 'HR',
+    name: 'HR Department',
+    description:
+      'Manages people operations, onboarding, and employment policy acknowledgement.',
+    status: DepartmentStatus.ACTIVE,
+    isOrganizationWide: true,
+    locationCode: null as string | null,
+    displayOrder: 2,
+  },
+  {
+    code: 'COMP',
+    name: 'Compliance Department',
+    description:
+      'Oversees policy compliance, monitoring, and regulatory reporting across the organization.',
+    status: DepartmentStatus.ACTIVE,
+    isOrganizationWide: true,
+    locationCode: null as string | null,
+    displayOrder: 3,
+  },
+  {
+    code: 'OPS',
+    name: 'Operations',
+    description: 'Coordinates day-to-day operational workflows and location support.',
+    status: DepartmentStatus.ACTIVE,
+    isOrganizationWide: false,
+    locationCode: 'HO',
+    displayOrder: 4,
+  },
+] as const;
+
 const seedUsers = [
   {
     email: 'admin@rbitogon.com',
@@ -206,7 +292,13 @@ const seedUsers = [
     password: 'admin123',
     firstName: 'Admin',
     lastName: 'User',
-    department: 'IT Department',
+    preferredName: 'Admin',
+    phone: '+63 917 123 4567',
+    employeeId: 'EMP-2021-00123',
+    jobTitle: 'Administrator',
+    dateHired: new Date('2021-01-15T00:00:00Z'),
+    departmentCode: 'IT',
+    locationCode: 'HO',
     role: Role.ADMIN,
     roleTitle: 'Administrator',
     status: UserStatus.ACTIVE,
@@ -218,7 +310,13 @@ const seedUsers = [
     password: 'employe123',
     firstName: 'John',
     lastName: 'Dela Cruz',
-    department: 'IT Department',
+    preferredName: 'John',
+    phone: '+63 917 555 0101',
+    employeeId: 'EMP-2022-00456',
+    jobTitle: 'IT Specialist',
+    dateHired: new Date('2022-03-01T00:00:00Z'),
+    departmentCode: 'IT',
+    locationCode: 'HO',
     role: Role.EMPLOYEE,
     roleTitle: 'User',
     status: UserStatus.ACTIVE,
@@ -230,7 +328,13 @@ const seedUsers = [
     password: 'TempPass123!',
     firstName: 'Maria',
     lastName: 'Santos',
-    department: 'Compliance Department',
+    preferredName: 'Maria',
+    phone: '+63 917 555 0202',
+    employeeId: 'EMP-2021-00789',
+    jobTitle: 'Compliance Officer',
+    dateHired: new Date('2021-06-10T00:00:00Z'),
+    departmentCode: 'COMP',
+    locationCode: 'HO',
     role: Role.MANAGER,
     roleTitle: 'Compliance Officer',
     status: UserStatus.ACTIVE,
@@ -242,7 +346,13 @@ const seedUsers = [
     password: 'TempPass123!',
     firstName: 'Anna',
     lastName: 'Reyes',
-    department: 'HR Department',
+    preferredName: 'Anna',
+    phone: '+63 917 555 0303',
+    employeeId: 'EMP-2020-00321',
+    jobTitle: 'HR Officer',
+    dateHired: new Date('2020-11-05T00:00:00Z'),
+    departmentCode: 'HR',
+    locationCode: 'BAG',
     role: Role.MANAGER,
     roleTitle: 'HR Officer',
     status: UserStatus.INACTIVE,
@@ -254,7 +364,13 @@ const seedUsers = [
     password: 'TempPass123!',
     firstName: 'Michael',
     lastName: 'Cruz',
-    department: 'IT Department',
+    preferredName: 'Michael',
+    phone: '+63 917 555 0404',
+    employeeId: 'EMP-2023-00999',
+    jobTitle: 'IT Specialist',
+    dateHired: new Date('2023-02-20T00:00:00Z'),
+    departmentCode: 'IT',
+    locationCode: 'BAG',
     role: Role.EMPLOYEE,
     roleTitle: 'IT Specialist',
     status: UserStatus.LOCKED,
@@ -432,6 +548,9 @@ const seedPolicies: Array<{
 async function main() {
   const rolesByName = new Map<string, string>();
   const categoriesByCode = new Map<string, string>();
+  const locationsByCode = new Map<string, string>();
+  const departmentsByCode = new Map<string, { id: string; name: string }>();
+  const usersByEmail = new Map<string, string>();
 
   for (const role of roleDefinitions) {
     const createdRole = await prisma.roleDefinition.upsert({
@@ -467,6 +586,58 @@ async function main() {
     }
   }
 
+  for (const location of seedLocations) {
+    const createdLocation = await prisma.location.upsert({
+      where: { code: location.code },
+      update: {
+        name: location.name,
+        streetAddress: location.streetAddress,
+        city: location.city,
+        province: location.province,
+        postalCode: location.postalCode,
+        email: location.email,
+        phone: location.phone,
+        description: location.description,
+        status: location.status,
+      },
+      create: location,
+    });
+
+    locationsByCode.set(location.code, createdLocation.id);
+  }
+
+  for (const department of seedDepartments) {
+    const locationId = department.locationCode
+      ? locationsByCode.get(department.locationCode) ?? null
+      : null;
+
+    const createdDepartment = await prisma.department.upsert({
+      where: { code: department.code },
+      update: {
+        name: department.name,
+        description: department.description,
+        status: department.status,
+        isOrganizationWide: department.isOrganizationWide,
+        locationId,
+        displayOrder: department.displayOrder,
+      },
+      create: {
+        code: department.code,
+        name: department.name,
+        description: department.description,
+        status: department.status,
+        isOrganizationWide: department.isOrganizationWide,
+        locationId,
+        displayOrder: department.displayOrder,
+      },
+    });
+
+    departmentsByCode.set(department.code, {
+      id: createdDepartment.id,
+      name: createdDepartment.name,
+    });
+  }
+
   for (const user of seedUsers) {
     const passwordHash = await bcrypt.hash(user.password, 10);
 
@@ -474,14 +645,31 @@ async function main() {
       throw new Error(`Missing seeded role for user role title: ${user.roleTitle}`);
     }
 
-    await prisma.user.upsert({
+    const department = departmentsByCode.get(user.departmentCode);
+    if (!department) {
+      throw new Error(`Missing seeded department for code: ${user.departmentCode}`);
+    }
+
+    const locationId = locationsByCode.get(user.locationCode);
+    if (!locationId) {
+      throw new Error(`Missing seeded location for code: ${user.locationCode}`);
+    }
+
+    const createdUser = await prisma.user.upsert({
       where: { email: user.email },
       update: {
         username: user.username,
         password: passwordHash,
         firstName: user.firstName,
         lastName: user.lastName,
-        department: user.department,
+        preferredName: user.preferredName,
+        phone: user.phone,
+        employeeId: user.employeeId,
+        jobTitle: user.jobTitle,
+        dateHired: user.dateHired,
+        department: department.name,
+        departmentId: department.id,
+        locationId,
         role: user.role,
         roleTitle: user.roleTitle,
         status: user.status,
@@ -493,12 +681,96 @@ async function main() {
         password: passwordHash,
         firstName: user.firstName,
         lastName: user.lastName,
-        department: user.department,
+        preferredName: user.preferredName,
+        phone: user.phone,
+        employeeId: user.employeeId,
+        jobTitle: user.jobTitle,
+        dateHired: user.dateHired,
+        department: department.name,
+        departmentId: department.id,
+        locationId,
         role: user.role,
         roleTitle: user.roleTitle,
         status: user.status,
         lastLoginAt: user.lastLoginAt,
       },
+    });
+
+    usersByEmail.set(user.email, createdUser.id);
+  }
+
+  const headOfficeId = locationsByCode.get('HO');
+  const baguioId = locationsByCode.get('BAG');
+  const adminId = usersByEmail.get('admin@rbitogon.com');
+  const johnId = usersByEmail.get('employee@rbitogon.com');
+  const mariaId = usersByEmail.get('maria.santos@rbitogon.com');
+  const annaId = usersByEmail.get('anna.reyes@rbitogon.com');
+  const michaelId = usersByEmail.get('michael.cruz@rbitogon.com');
+
+  if (johnId && adminId) {
+    await prisma.user.update({
+      where: { id: johnId },
+      data: { reportsToUserId: adminId },
+    });
+  }
+
+  if (mariaId && adminId) {
+    await prisma.user.update({
+      where: { id: mariaId },
+      data: { reportsToUserId: adminId },
+    });
+  }
+
+  if (michaelId && johnId) {
+    await prisma.user.update({
+      where: { id: michaelId },
+      data: { reportsToUserId: johnId },
+    });
+  }
+
+  if (annaId && adminId) {
+    await prisma.user.update({
+      where: { id: annaId },
+      data: { reportsToUserId: adminId },
+    });
+  }
+
+  if (headOfficeId && johnId) {
+    await prisma.location.update({
+      where: { id: headOfficeId },
+      data: { managerUserId: johnId },
+    });
+  }
+
+  if (baguioId && annaId) {
+    await prisma.location.update({
+      where: { id: baguioId },
+      data: { managerUserId: annaId },
+    });
+  }
+
+  const itDepartment = departmentsByCode.get('IT');
+  const hrDepartment = departmentsByCode.get('HR');
+  const complianceDepartment = departmentsByCode.get('COMP');
+
+  if (itDepartment && johnId) {
+    await prisma.department.update({
+      where: { id: itDepartment.id },
+      data: { headUserId: johnId },
+    });
+  }
+
+  if (hrDepartment && annaId) {
+    await prisma.department.update({
+      where: { id: hrDepartment.id },
+      data: { headUserId: annaId },
+    });
+  }
+
+  if (complianceDepartment && mariaId) {
+    await prisma.department.update({
+      where: { id: complianceDepartment.id },
+      data: { headUserId: mariaId },
     });
   }
 

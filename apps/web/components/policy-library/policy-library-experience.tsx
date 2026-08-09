@@ -23,6 +23,8 @@ import {
 import { DashboardPanel, DashboardTopbar } from "../dashboard/primitives";
 import { DashboardMobileNav, DashboardSidebar } from "../dashboard/dashboard-nav";
 import { DropdownSelect } from "../ui/dropdown-select";
+import { EmptyState } from "../ui/empty-state";
+import { ModuleGuide } from "../dashboard/module-guide";
 
 const DEFAULT_API_BASE_URL = "http://localhost:3001";
 const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
@@ -859,18 +861,50 @@ export default function PolicyLibraryExperience({
           ) : null}
 
           {!isLoading && filteredPolicies.length === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
-              <div className="text-base font-semibold text-slate-900">No policies found</div>
-              <p className="mt-1 text-sm text-slate-500">
-                Try a different keyword, category, or status filter.
-              </p>
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              {(policiesResponse?.stats.totalPolicies ?? 0) === 0 ? (
+                <EmptyState
+                  icon={BookOpenText}
+                  title="No policies have been added yet."
+                  description={
+                    mode === "admin"
+                      ? "Published policies will appear here for browsing and reading across the organization."
+                      : "No policies have been published for you yet. Check back later or contact your administrator."
+                  }
+                  actionLabel={mode === "admin" ? "Go to Policy Management" : undefined}
+                  onAction={
+                    mode === "admin"
+                      ? () => {
+                          window.location.href = "/admin/policy-management";
+                        }
+                      : undefined
+                  }
+                />
+              ) : (
+                <EmptyState
+                  icon={Search}
+                  title="No matching policies"
+                  description="Try a different keyword, category, or status filter."
+                  actionLabel="Clear filters"
+                  onAction={() => {
+                    setQuery("");
+                    setSelectedCategoryId("all");
+                    setSelectedStatus("");
+                  }}
+                  className="py-12"
+                />
+              )}
             </div>
           ) : null}
 
-          <div className="mt-5 flex flex-col gap-2 border-t border-slate-200 pt-4 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-            <span>{mode === "admin" ? "© 2026 Hinora. All rights reserved." : "© 2024 Hinora. All rights reserved."}</span>
-            <span>Hinora AI Policy Library &amp; Knowledge Management System</span>
-          </div>
+          {mode === "admin" ? (
+            <ModuleGuide guideKey="Policy Library" />
+          ) : (
+            <div className="mt-5 flex flex-col gap-2 border-t border-slate-200 pt-4 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+              <span>© 2024 Hinora. All rights reserved.</span>
+              <span>Hinora AI Policy Library &amp; Knowledge Management System</span>
+            </div>
+          )}
         </div>
       </section>
     </main>

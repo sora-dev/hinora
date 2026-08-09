@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   AtSign,
-  BookOpenText,
   Briefcase,
   Building2,
+  CalendarDays,
   CheckCircle2,
   CircleDot,
   CircleHelp,
@@ -14,12 +14,14 @@ import {
   Eye,
   EyeOff,
   Filter,
+  IdCard,
   Import,
   Info,
   KeyRound,
   Lock,
   Mail,
   Pencil,
+  Phone,
   Plus,
   RefreshCw,
   Search,
@@ -47,9 +49,17 @@ import {
   DropdownSelect,
   type DropdownOption,
 } from "../../../components/ui/dropdown-select";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { ModuleGuide } from "../../../components/dashboard/module-guide";
 
 type UserStatus = "ACTIVE" | "INACTIVE" | "LOCKED";
 type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
+
+type OrgOption = {
+  id: string;
+  name: string;
+  code: string;
+};
 
 type UserRecord = {
   id: string;
@@ -57,9 +67,23 @@ type UserRecord = {
   username: string;
   firstName: string;
   lastName: string;
+  preferredName: string | null;
+  phone: string | null;
+  employeeId: string | null;
   fullName: string;
   department: string;
+  departmentId: string | null;
+  location: string | null;
+  locationId: string | null;
   jobTitle: string | null;
+  reportsToUserId: string | null;
+  reportsTo: {
+    id: string;
+    fullName: string;
+    email: string;
+    jobTitle: string | null;
+  } | null;
+  dateHired: string | null;
   role: Role;
   roleTitle: string;
   status: UserStatus;
@@ -79,6 +103,9 @@ type UsersResponse = {
   };
   filters: {
     departments: string[];
+    departmentOptions: OrgOption[];
+    locations: string[];
+    locationOptions: OrgOption[];
     roles: string[];
     statuses: UserStatus[];
   };
@@ -108,13 +135,25 @@ const statusSelectOptions: DropdownOption<UserStatus>[] = [
   { value: "LOCKED", label: "Locked", badgeClassName: "bg-red-50 text-[var(--color-error)]" },
 ];
 
+const accountTypeOptions: DropdownOption<Role>[] = [
+  { value: "ADMIN", label: "Administrator" },
+  { value: "MANAGER", label: "Manager" },
+  { value: "EMPLOYEE", label: "Employee" },
+];
+
 type UserFormState = {
   email: string;
   username: string;
   firstName: string;
   lastName: string;
-  department: string;
+  preferredName: string;
+  phone: string;
+  employeeId: string;
+  departmentId: string;
+  locationId: string;
   jobTitle: string;
+  reportsToUserId: string;
+  dateHired: string;
   role: Role;
   roleTitle: string;
   status: UserStatus;
@@ -169,13 +208,43 @@ const defaultUserForm: UserFormState = {
   username: "",
   firstName: "",
   lastName: "",
-  department: "",
+  preferredName: "",
+  phone: "",
+  employeeId: "",
+  departmentId: "",
+  locationId: "",
   jobTitle: "",
+  reportsToUserId: "",
+  dateHired: "",
   role: "EMPLOYEE",
   roleTitle: "",
   status: "ACTIVE",
   password: "",
 };
+
+function formatDateInput(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDisplayDate(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function accountTypeLabel(role: Role) {
+  if (role === "ADMIN") return "Administrator";
+  if (role === "MANAGER") return "Manager";
+  return "Employee";
+}
 
 function deriveSystemRole(accessRole: string): Role {
   const normalized = accessRole.trim().toLowerCase();
@@ -341,6 +410,9 @@ export default function AdminUsersClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [accessRoleOptions, setAccessRoleOptions] = useState<AccessRoleOption[]>([]);
+  const [managerOptions, setManagerOptions] = useState<
+    Array<{ id: string; fullName: string; jobTitle: string | null }>
+  >([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
@@ -350,7 +422,6 @@ export default function AdminUsersClient() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [showGuideModal, setShowGuideModal] = useState(false);
   const [formState, setFormState] = useState<UserFormState>(defaultUserForm);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -425,9 +496,17 @@ export default function AdminUsersClient() {
 
   const filters = usersResponse?.filters ?? {
     departments: [],
+    departmentOptions: [] as OrgOption[],
+    locations: [],
+    locationOptions: [] as OrgOption[],
     roles: [],
     statuses: ["ACTIVE", "INACTIVE", "LOCKED"] as UserStatus[],
   };
+
+  const departmentOptions = filters.departmentOptions?.length
+    ? filters.departmentOptions
+    : filters.departments.map((name) => ({ id: name, name, code: name }));
+  const locationOptions = filters.locationOptions ?? [];
 
   const users = usersResponse?.data ?? [];
 
@@ -479,6 +558,28 @@ export default function AdminUsersClient() {
     setSuccessMessage("");
   }
 
+  async function loadManagerOptions(excludeUserId?: string | null) {
+    try {
+      const params = new URLSearchParams({
+        page: "1",
+        pageSize: "100",
+        status: "ACTIVE",
+      });
+      const response = await requestJson<UsersResponse>(`/users?${params.toString()}`);
+      setManagerOptions(
+        (response.data ?? [])
+          .filter((user) => user.id !== excludeUserId)
+          .map((user) => ({
+            id: user.id,
+            fullName: user.fullName,
+            jobTitle: user.jobTitle,
+          })),
+      );
+    } catch {
+      setManagerOptions([]);
+    }
+  }
+
   function openCreateModal() {
     resetMessages();
     setFormState({
@@ -489,6 +590,7 @@ export default function AdminUsersClient() {
     setRequirePasswordChange(true);
     setEnableMfa(true);
     setShowCreateModal(true);
+    void loadManagerOptions();
   }
 
   function openEditModal(user: UserRecord) {
@@ -500,14 +602,21 @@ export default function AdminUsersClient() {
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
-      department: user.department,
+      preferredName: user.preferredName ?? "",
+      phone: user.phone ?? "",
+      employeeId: user.employeeId ?? "",
+      departmentId: user.departmentId ?? "",
+      locationId: user.locationId ?? "",
       jobTitle: user.jobTitle ?? "",
+      reportsToUserId: user.reportsToUserId ?? "",
+      dateHired: formatDateInput(user.dateHired),
       role: user.role,
       roleTitle: user.roleTitle,
       status: user.status,
       password: "",
     });
     setShowEditModal(true);
+    void loadManagerOptions(user.id);
   }
 
   function openViewModal(user: UserRecord) {
@@ -528,17 +637,11 @@ export default function AdminUsersClient() {
     setShowPasswordModal(true);
   }
 
-  function openGuideModal() {
-    resetMessages();
-    setShowGuideModal(true);
-  }
-
   function closeModals() {
     setShowCreateModal(false);
     setShowEditModal(false);
     setShowViewModal(false);
     setShowPasswordModal(false);
-    setShowGuideModal(false);
     setSelectedUser(null);
     setEditingUserId(null);
     setPasswordUserId(null);
@@ -549,17 +652,38 @@ export default function AdminUsersClient() {
   }
 
   function updateFormField<K extends keyof UserFormState>(key: K, value: UserFormState[K]) {
-    setFormState((current) => {
-      if (key === "roleTitle" && typeof value === "string") {
-        return {
-          ...current,
-          roleTitle: value,
-          role: deriveSystemRole(value),
-        };
-      }
+    setFormState((current) => ({ ...current, [key]: value }));
+  }
 
-      return { ...current, [key]: value };
-    });
+  function buildUserPayload(includePassword = false) {
+    const jobTitle = formState.jobTitle.trim();
+    const preferredName = formState.preferredName.trim();
+    const phone = formState.phone.trim();
+    const employeeId = formState.employeeId.trim();
+
+    return {
+      email: formState.email,
+      username: formState.username,
+      firstName: formState.firstName,
+      lastName: formState.lastName,
+      preferredName: preferredName.length > 0 ? preferredName : null,
+      phone: phone.length > 0 ? phone : null,
+      employeeId: employeeId.length > 0 ? employeeId : null,
+      departmentId: formState.departmentId,
+      locationId: formState.locationId || null,
+      jobTitle: jobTitle.length > 0 ? jobTitle : null,
+      reportsToUserId: formState.reportsToUserId || null,
+      dateHired: formState.dateHired || null,
+      roleTitle: formState.roleTitle.trim(),
+      role: formState.role,
+      status: formState.status,
+      ...(includePassword
+        ? {
+            password: formState.password,
+            mustChangePassword: requirePasswordChange,
+          }
+        : {}),
+    };
   }
 
   async function handleCreateUser() {
@@ -567,7 +691,6 @@ export default function AdminUsersClient() {
     resetMessages();
 
     try {
-      const jobTitle = formState.jobTitle.trim();
       if (!isPasswordStrong(formState.password)) {
         throw new Error(
           "Temporary password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.",
@@ -575,19 +698,7 @@ export default function AdminUsersClient() {
       }
       await requestJson<UserRecord>("/users", {
         method: "POST",
-        body: JSON.stringify({
-          email: formState.email,
-          username: formState.username,
-          password: formState.password,
-          firstName: formState.firstName,
-          lastName: formState.lastName,
-          department: formState.department,
-          jobTitle: jobTitle.length > 0 ? jobTitle : null,
-          roleTitle: formState.roleTitle.trim(),
-          role: deriveSystemRole(formState.roleTitle),
-          status: formState.status,
-          mustChangePassword: requirePasswordChange,
-        }),
+        body: JSON.stringify(buildUserPayload(true)),
       });
       setSuccessMessage("User created successfully.");
       closeModals();
@@ -610,20 +721,9 @@ export default function AdminUsersClient() {
     resetMessages();
 
     try {
-      const jobTitle = formState.jobTitle.trim();
       await requestJson<UserRecord>(`/users/${userId}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          email: formState.email,
-          username: formState.username,
-          firstName: formState.firstName,
-          lastName: formState.lastName,
-          department: formState.department,
-          jobTitle: jobTitle.length > 0 ? jobTitle : null,
-          role: deriveSystemRole(formState.roleTitle),
-          roleTitle: formState.roleTitle,
-          status: formState.status,
-        }),
+        body: JSON.stringify(buildUserPayload()),
       });
       setSuccessMessage("User updated successfully.");
       closeModals();
@@ -907,6 +1007,31 @@ export default function AdminUsersClient() {
 
             {isLoading ? (
               <div className="px-4 py-12 text-center text-sm text-slate-500">Loading users...</div>
+            ) : users.length === 0 ? (
+              (usersResponse?.stats.totalUsers ?? 0) === 0 ? (
+                <EmptyState
+                  icon={Users}
+                  title="No users have been added yet."
+                  description="Users are the people who will read, acknowledge, and manage policies in Hinora."
+                  actionLabel="Add First User"
+                  onAction={openCreateModal}
+                />
+              ) : (
+                <EmptyState
+                  icon={Search}
+                  title="No matching users"
+                  description="Try another search term or reset filters to see all users."
+                  actionLabel="Reset Filters"
+                  onAction={() => {
+                    setSearchInput("");
+                    setSearch("");
+                    setStatusFilter("ALL");
+                    setRoleFilter("ALL");
+                    setDepartmentFilter("ALL");
+                    setPage(1);
+                  }}
+                />
+              )
             ) : (
               <>
                 <div className="hidden overflow-x-auto lg:block">
@@ -1076,53 +1201,24 @@ export default function AdminUsersClient() {
             )}
           </DashboardPanel>
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_auto]">
-            <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-[0_10px_32px_rgba(15,23,42,0.04)] xl:col-span-2">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--color-active-menu)] to-[var(--color-hover)] text-white shadow-[0_10px_24px_rgba(37,99,235,0.18)]">
-                    <UserPlus className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-slate-900">User Management Guide</h2>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">
-                      Create, manage and organize system users. Assign roles and permissions to control access to policies and features.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={openGuideModal}
-                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 text-sm font-semibold text-[var(--color-active-menu)] transition hover:bg-blue-100"
-                >
-                  <BookOpenText className="h-4 w-4" />
-                  <span>View User Guide</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
-
-          <footer className="flex flex-col gap-2 px-1 pt-5 text-[0.82rem] text-slate-400 md:flex-row md:items-center md:justify-between">
-            <span>© 2026 Hinora. All rights reserved.</span>
-            <span>Hinora AI Policy Library &amp; Knowledge Management System</span>
-          </footer>
+          <ModuleGuide guideKey="Users" />
         </div>
       </section>
 
       {showCreateModal ? (
         <Modal
           title="Add New User"
-          description="Create a new user and assign their role, department, and initial password."
+          description="Create a new user with personal, work, and account details."
           onClose={closeModals}
           icon={UserPlus}
-          maxWidthClassName="sm:max-w-3xl"
+          maxWidthClassName="sm:max-w-4xl"
         >
           <UserAccountForm
             formState={formState}
             onChange={updateFormField}
-            departmentOptions={filters.departments}
+            departmentOptions={departmentOptions}
+            locationOptions={locationOptions}
+            managerOptions={managerOptions}
             accessRoleOptions={accessRoleOptions}
             includeSecurity
             showPassword={showTempPassword}
@@ -1163,15 +1259,17 @@ export default function AdminUsersClient() {
       {showEditModal ? (
         <Modal
           title="Edit User"
-          description="Update personal details, organization access, and account status."
+          description="Update personal details, work information, and account status."
           onClose={closeModals}
           icon={Pencil}
-          maxWidthClassName="sm:max-w-3xl"
+          maxWidthClassName="sm:max-w-4xl"
         >
           <UserAccountForm
             formState={formState}
             onChange={updateFormField}
-            departmentOptions={filters.departments}
+            departmentOptions={departmentOptions}
+            locationOptions={locationOptions}
+            managerOptions={managerOptions}
             accessRoleOptions={accessRoleOptions}
           />
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -1214,10 +1312,22 @@ export default function AdminUsersClient() {
                   iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
                 />
                 <DetailCard
+                  label="Preferred Name"
+                  value={selectedUser.preferredName?.trim() || selectedUser.firstName}
+                  Icon={UserRound}
+                  iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
+                />
+                <DetailCard
                   label="Email"
                   value={selectedUser.email}
                   Icon={Mail}
                   iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
+                />
+                <DetailCard
+                  label="Phone Number"
+                  value={selectedUser.phone?.trim() || "—"}
+                  Icon={Phone}
+                  iconClassName="bg-sky-50 text-sky-600"
                 />
                 <DetailCard
                   label="Username"
@@ -1226,22 +1336,52 @@ export default function AdminUsersClient() {
                   iconClassName="bg-violet-50 text-violet-600"
                 />
                 <DetailCard
+                  label="Employee ID"
+                  value={selectedUser.employeeId?.trim() || "—"}
+                  Icon={IdCard}
+                  iconClassName="bg-slate-100 text-slate-600"
+                />
+                <DetailCard
                   label="Department"
                   value={selectedUser.department}
                   Icon={Building2}
                   iconClassName="bg-emerald-50 text-[var(--color-success)]"
                 />
                 <DetailCard
-                  label="Job Title"
+                  label="Location"
+                  value={selectedUser.location || "Unassigned"}
+                  Icon={Building2}
+                  iconClassName="bg-sky-50 text-sky-600"
+                />
+                <DetailCard
+                  label="Position / Job Title"
                   value={selectedUser.jobTitle?.trim() || "—"}
                   Icon={Briefcase}
                   iconClassName="bg-orange-50 text-orange-600"
                 />
                 <DetailCard
-                  label="Access Role"
+                  label="Account Type"
+                  value={accountTypeLabel(selectedUser.role)}
+                  Icon={Shield}
+                  iconClassName="bg-indigo-50 text-indigo-600"
+                />
+                <DetailCard
+                  label="Role"
                   value={selectedUser.roleTitle}
                   Icon={Shield}
                   iconClassName="bg-violet-50 text-violet-600"
+                />
+                <DetailCard
+                  label="Reporting To"
+                  value={selectedUser.reportsTo?.fullName || "—"}
+                  Icon={UserRound}
+                  iconClassName="bg-amber-50 text-amber-700"
+                />
+                <DetailCard
+                  label="Date Hired"
+                  value={formatDisplayDate(selectedUser.dateHired)}
+                  Icon={CalendarDays}
+                  iconClassName="bg-teal-50 text-teal-700"
                 />
                 <DetailCard
                   label="Status"
@@ -1520,34 +1660,6 @@ export default function AdminUsersClient() {
         </Modal>
       ) : null}
 
-      {showGuideModal ? (
-        <Modal
-          title="User Management Guide"
-          description="Quick reference for creating, updating, and controlling user access."
-          onClose={closeModals}
-        >
-          <div className="grid gap-4">
-            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-              <div className="text-sm font-bold text-[var(--color-active-menu)]">Create users</div>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Use <span className="font-semibold">Add New User</span> to create individual accounts with a department, role, title, status, and temporary password.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
-              <div className="text-sm font-bold text-[var(--color-ai-accent)]">Import users</div>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Use <span className="font-semibold">Import Users</span> for bulk creation through CSV. Include fields for email, username, first name, last name, department, role, role title, status, and password.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-              <div className="text-sm font-bold text-[var(--color-success)]">Manage access</div>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Use the action icons in the table to view details, edit user data, reset passwords, and lock or unlock accounts based on employment status.
-              </p>
-            </div>
-          </div>
-        </Modal>
-      ) : null}
     </main>
   );
 }
@@ -1595,6 +1707,8 @@ function UserAccountForm({
   formState,
   onChange,
   departmentOptions,
+  locationOptions,
+  managerOptions,
   accessRoleOptions,
   includeSecurity = false,
   showPassword = false,
@@ -1607,7 +1721,9 @@ function UserAccountForm({
 }: {
   formState: UserFormState;
   onChange: <K extends keyof UserFormState>(key: K, value: UserFormState[K]) => void;
-  departmentOptions: string[];
+  departmentOptions: OrgOption[];
+  locationOptions: OrgOption[];
+  managerOptions: Array<{ id: string; fullName: string; jobTitle: string | null }>;
   accessRoleOptions: AccessRoleOption[];
   includeSecurity?: boolean;
   showPassword?: boolean;
@@ -1622,8 +1738,20 @@ function UserAccountForm({
     "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--color-active-menu)] focus:ring-4 focus:ring-blue-100";
 
   const departmentSelectOptions = departmentOptions.map((department) => ({
-    value: department,
-    label: department,
+    value: department.id,
+    label: department.name,
+  }));
+
+  const locationSelectOptions = locationOptions.map((location) => ({
+    value: location.id,
+    label: location.name,
+  }));
+
+  const managerSelectOptions = managerOptions.map((manager) => ({
+    value: manager.id,
+    label: manager.jobTitle
+      ? `${manager.fullName} · ${manager.jobTitle}`
+      : manager.fullName,
   }));
 
   const accessSelectOptions = accessRoleOptions.map((role) => ({
@@ -1634,7 +1762,7 @@ function UserAccountForm({
   return (
     <div className="space-y-6">
       <FormSection title="Personal Information" Icon={UserRound}>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <FormField label="First Name" required>
             <input
               value={formState.firstName}
@@ -1651,6 +1779,53 @@ function UserAccountForm({
               placeholder="e.g. Dela Cruz"
             />
           </FormField>
+          <FormField label="Preferred Name">
+            <input
+              value={formState.preferredName}
+              onChange={(event) => onChange("preferredName", event.target.value)}
+              className={inputClassName}
+              placeholder="e.g. Juan"
+            />
+          </FormField>
+          <FormField label="Position / Job Title">
+            <input
+              value={formState.jobTitle}
+              onChange={(event) => onChange("jobTitle", event.target.value)}
+              className={inputClassName}
+              placeholder="e.g. IT Specialist"
+            />
+          </FormField>
+          <FormField label="Department" required>
+            <DropdownSelect
+              value={formState.departmentId}
+              onChange={(value) => onChange("departmentId", value)}
+              options={departmentSelectOptions}
+              placeholder={
+                departmentSelectOptions.length > 0
+                  ? "Select department"
+                  : "Add departments first"
+              }
+            />
+          </FormField>
+          <FormField label="Location">
+            <DropdownSelect
+              value={formState.locationId}
+              onChange={(value) => onChange("locationId", value)}
+              options={locationSelectOptions}
+              placeholder={
+                locationSelectOptions.length > 0 ? "Select location" : "Add locations first"
+              }
+              allowClear
+            />
+          </FormField>
+          <FormField label="Employee ID">
+            <input
+              value={formState.employeeId}
+              onChange={(event) => onChange("employeeId", event.target.value)}
+              className={inputClassName}
+              placeholder="e.g. EMP-2026-00123"
+            />
+          </FormField>
           <FormField label="Email Address" required>
             <input
               type="email"
@@ -1658,6 +1833,14 @@ function UserAccountForm({
               onChange={(event) => onChange("email", event.target.value)}
               className={inputClassName}
               placeholder="e.g. juan.delacruz@ruralbank.com.ph"
+            />
+          </FormField>
+          <FormField label="Phone Number">
+            <input
+              value={formState.phone}
+              onChange={(event) => onChange("phone", event.target.value)}
+              className={inputClassName}
+              placeholder="e.g. +63 917 123 4567"
             />
           </FormField>
           <FormField label="Username" required>
@@ -1673,39 +1856,42 @@ function UserAccountForm({
 
       <div className="border-t border-slate-100" />
 
-      <FormSection title="Organization Information" Icon={Building2}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Department" required>
-            {departmentSelectOptions.length > 0 ? (
-              <DropdownSelect
-                value={formState.department}
-                onChange={(value) => onChange("department", value)}
-                options={departmentSelectOptions}
-                placeholder="Select department"
-              />
-            ) : (
-              <input
-                value={formState.department}
-                onChange={(event) => onChange("department", event.target.value)}
-                className={inputClassName}
-                placeholder="Select department"
-              />
-            )}
-          </FormField>
-          <FormField label="Job Title">
-            <input
-              value={formState.jobTitle}
-              onChange={(event) => onChange("jobTitle", event.target.value)}
-              className={inputClassName}
-              placeholder="e.g. IT Specialist"
+      <FormSection title="Work Information" Icon={Briefcase}>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <FormField label="Account Type" required>
+            <DropdownSelect
+              value={formState.role}
+              onChange={(value) => {
+                if (value) onChange("role", value);
+              }}
+              options={accountTypeOptions}
+              placeholder="Select account type"
+              allowClear={false}
             />
           </FormField>
-          <FormField label="Access Role" required>
+          <FormField label="Role" required>
             <DropdownSelect
               value={formState.roleTitle}
               onChange={(value) => onChange("roleTitle", value)}
               options={accessSelectOptions}
-              placeholder="Select access role"
+              placeholder="Select role"
+            />
+          </FormField>
+          <FormField label="Reporting To">
+            <DropdownSelect
+              value={formState.reportsToUserId}
+              onChange={(value) => onChange("reportsToUserId", value)}
+              options={managerSelectOptions}
+              placeholder="Select manager"
+              allowClear
+            />
+          </FormField>
+          <FormField label="Date Hired">
+            <input
+              type="date"
+              value={formState.dateHired}
+              onChange={(event) => onChange("dateHired", event.target.value)}
+              className={inputClassName}
             />
           </FormField>
           <FormField label="Status" required>
@@ -1729,6 +1915,10 @@ function UserAccountForm({
             />
           </FormField>
         </div>
+        <p className="text-xs leading-5 text-slate-500">
+          Department, location, role, and reporting lines are managed here and shown as locked fields on the
+          employee profile.
+        </p>
       </FormSection>
 
       {includeSecurity ? (

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
+  Building2,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -19,16 +20,17 @@ import {
   DashboardStatCard,
   DashboardTopbar,
 } from "../../../components/dashboard/primitives";
-import {
-  getLocationById,
-  ORGANIZATION_WIDE_SCOPE,
-} from "../../../components/departments/location-options";
+import { ORGANIZATION_WIDE_SCOPE } from "../../../components/departments/location-options";
 import DepartmentFormModal, {
   emptyDepartmentFormValues,
   type DepartmentFormValues,
   type DepartmentHeadOption,
 } from "../../../components/departments/department-form-modal";
 import { DropdownSelect } from "../../../components/ui/dropdown-select";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { ModuleGuide } from "../../../components/dashboard/module-guide";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 type DepartmentStatus = "Active" | "Inactive";
 
@@ -93,533 +95,6 @@ type Department = {
 
 const PAGE_SIZE = 7;
 
-const MOCK_DEPARTMENTS: Department[] = [
-  {
-    id: "dept-it",
-    name: "Information Technology",
-    shortName: "IT Department",
-    code: "IT",
-    description:
-      "Owns infrastructure, security controls, and digital systems that support company-wide policy enforcement.",
-    head: {
-      name: "John Dela Cruz",
-      email: "john.delacruz@company.com",
-      initials: "JD",
-    },
-    employees: 18,
-    compliance: 100,
-    policies: 12,
-    status: "Active",
-    locations: ["Head Office", "Baguio"],
-    createdAt: "May 15, 2024",
-    avatarTone: "bg-violet-100 text-violet-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "John Dela Cruz",
-        email: "john.delacruz@company.com",
-        role: "Department Head",
-        initials: "JD",
-        status: "Active",
-      },
-      {
-        id: "e2",
-        name: "Alyssa Ramos",
-        email: "alyssa.ramos@company.com",
-        role: "Security Analyst",
-        initials: "AR",
-        status: "Active",
-      },
-      {
-        id: "e3",
-        name: "Kenji Ortega",
-        email: "kenji.ortega@company.com",
-        role: "Systems Engineer",
-        initials: "KO",
-        status: "Active",
-      },
-      {
-        id: "e4",
-        name: "Patricia Lim",
-        email: "patricia.lim@company.com",
-        role: "IT Support Lead",
-        initials: "PL",
-        status: "On Leave",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Acceptable Use Policy", status: "Completed", dueAt: "Jun 12, 2026" },
-      { id: "p2", title: "Data Classification Standard", status: "Completed", dueAt: "Jun 20, 2026" },
-      { id: "p3", title: "Incident Response Playbook", status: "Assigned", dueAt: "Aug 15, 2026" },
-      { id: "p4", title: "Access Control Policy", status: "Completed", dueAt: "Jul 01, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "Compliance reached 100%",
-        detail: "All assigned policies were acknowledged by IT staff.",
-        at: "Aug 2, 2026 · 10:24 AM",
-      },
-      {
-        id: "a2",
-        title: "Policy assigned",
-        detail: "Incident Response Playbook assigned to 18 employees.",
-        at: "Jul 28, 2026 · 3:12 PM",
-      },
-      {
-        id: "a3",
-        title: "Department head updated",
-        detail: "John Dela Cruz set as department head.",
-        at: "Jul 10, 2026 · 9:05 AM",
-      },
-    ],
-    complianceTrend: [88, 91, 96, 100],
-  },
-  {
-    id: "dept-hr",
-    name: "Human Resources",
-    shortName: "HR Department",
-    code: "HR",
-    description: "Manages people operations, onboarding, and employment policy acknowledgement.",
-    head: {
-      name: "Maria Santos",
-      email: "maria.santos@company.com",
-      initials: "MS",
-    },
-    employees: 15,
-    compliance: 93,
-    policies: 10,
-    status: "Active",
-    locations: ["Head Office", "Cebu"],
-    createdAt: "Mar 02, 2024",
-    avatarTone: "bg-sky-100 text-sky-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Maria Santos",
-        email: "maria.santos@company.com",
-        role: "Department Head",
-        initials: "MS",
-        status: "Active",
-      },
-      {
-        id: "e2",
-        name: "Diane Cruz",
-        email: "diane.cruz@company.com",
-        role: "HR Business Partner",
-        initials: "DC",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Code of Conduct", status: "Completed", dueAt: "May 30, 2026" },
-      { id: "p2", title: "Workplace Harassment Policy", status: "Assigned", dueAt: "Aug 22, 2026" },
-      { id: "p3", title: "Leave Management Policy", status: "Overdue", dueAt: "Jul 15, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "Reminder sent",
-        detail: "2 employees reminded about Leave Management Policy.",
-        at: "Aug 4, 2026 · 2:40 PM",
-      },
-    ],
-    complianceTrend: [84, 87, 90, 93],
-  },
-  {
-    id: "dept-ac",
-    name: "Accounting",
-    shortName: "Finance & Accounting",
-    code: "AC",
-    description: "Handles financial controls, procurement oversight, and related policy compliance.",
-    head: {
-      name: "Roberto Cruz",
-      email: "roberto.cruz@company.com",
-      initials: "RC",
-    },
-    employees: 12,
-    compliance: 100,
-    policies: 8,
-    status: "Active",
-    locations: ["Head Office"],
-    createdAt: "Jan 18, 2024",
-    avatarTone: "bg-amber-100 text-amber-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Roberto Cruz",
-        email: "roberto.cruz@company.com",
-        role: "Department Head",
-        initials: "RC",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Expense Reimbursement Policy", status: "Completed", dueAt: "Jun 01, 2026" },
-      { id: "p2", title: "Procurement Policy", status: "Completed", dueAt: "Jun 18, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "All policies completed",
-        detail: "Accounting closed the current compliance cycle.",
-        at: "Jul 22, 2026 · 11:18 AM",
-      },
-    ],
-    complianceTrend: [92, 95, 98, 100],
-  },
-  {
-    id: "dept-ops",
-    name: "Operations",
-    shortName: "Operations Department",
-    code: "OP",
-    description: "Coordinates day-to-day business operations and location execution standards.",
-    head: {
-      name: "Ana Reyes",
-      email: "ana.reyes@company.com",
-      initials: "AR",
-    },
-    employees: 22,
-    compliance: 91,
-    policies: 15,
-    status: "Active",
-    locations: ["Head Office", "Davao", "Cebu"],
-    createdAt: "Feb 09, 2024",
-    avatarTone: "bg-emerald-100 text-emerald-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Ana Reyes",
-        email: "ana.reyes@company.com",
-        role: "Department Head",
-        initials: "AR",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Location Operations Manual", status: "Assigned", dueAt: "Aug 30, 2026" },
-      { id: "p2", title: "Safety Protocol", status: "Completed", dueAt: "May 12, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "New location linked",
-        detail: "Davao added to Operations coverage.",
-        at: "Jul 05, 2026 · 4:02 PM",
-      },
-    ],
-    complianceTrend: [80, 85, 89, 91],
-  },
-  {
-    id: "dept-legal",
-    name: "Legal & Compliance",
-    shortName: "Legal Department",
-    code: "LC",
-    description: "Oversees regulatory obligations, policy governance, and legal risk.",
-    head: {
-      name: "Carlos Mendoza",
-      email: "carlos.mendoza@company.com",
-      initials: "CM",
-    },
-    employees: 8,
-    compliance: 100,
-    policies: 14,
-    status: "Active",
-    locations: ["Head Office"],
-    createdAt: "Apr 21, 2024",
-    avatarTone: "bg-rose-100 text-rose-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Carlos Mendoza",
-        email: "carlos.mendoza@company.com",
-        role: "Department Head",
-        initials: "CM",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Regulatory Compliance Framework", status: "Completed", dueAt: "Jun 08, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "Framework published",
-        detail: "Regulatory Compliance Framework marked complete.",
-        at: "Jun 08, 2026 · 1:45 PM",
-      },
-    ],
-    complianceTrend: [94, 97, 99, 100],
-  },
-  {
-    id: "dept-mkt",
-    name: "Marketing",
-    shortName: "Marketing Department",
-    code: "MK",
-    description: "Leads brand, communications, and external messaging controls.",
-    head: {
-      name: "Sofia Garcia",
-      email: "sofia.garcia@company.com",
-      initials: "SG",
-    },
-    employees: 10,
-    compliance: 85,
-    policies: 6,
-    status: "Active",
-    locations: ["Head Office", "Baguio"],
-    createdAt: "May 03, 2024",
-    avatarTone: "bg-fuchsia-100 text-fuchsia-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Sofia Garcia",
-        email: "sofia.garcia@company.com",
-        role: "Department Head",
-        initials: "SG",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Brand Guidelines", status: "Assigned", dueAt: "Aug 18, 2026" },
-      { id: "p2", title: "Social Media Policy", status: "Overdue", dueAt: "Jul 20, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "Overdue alert",
-        detail: "Social Media Policy is past due for 3 employees.",
-        at: "Aug 1, 2026 · 8:30 AM",
-      },
-    ],
-    complianceTrend: [78, 80, 83, 85],
-  },
-  {
-    id: "dept-cs",
-    name: "Customer Service",
-    shortName: "Customer Support",
-    code: "CS",
-    description: "Supports customer interactions and service quality standards.",
-    head: {
-      name: "Miguel Torres",
-      email: "miguel.torres@company.com",
-      initials: "MT",
-    },
-    employees: 25,
-    compliance: 88,
-    policies: 9,
-    status: "Active",
-    locations: ["Head Office", "Cebu", "Davao"],
-    createdAt: "Jun 11, 2024",
-    avatarTone: "bg-cyan-100 text-cyan-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Miguel Torres",
-        email: "miguel.torres@company.com",
-        role: "Department Head",
-        initials: "MT",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Customer Data Handling", status: "Assigned", dueAt: "Aug 25, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "Training completed",
-        detail: "Customer Data Handling orientation finished for shift leads.",
-        at: "Jul 30, 2026 · 5:10 PM",
-      },
-    ],
-    complianceTrend: [81, 84, 86, 88],
-  },
-  {
-    id: "dept-sales",
-    name: "Sales",
-    shortName: "Sales Department",
-    code: "SL",
-    description: "Drives revenue programs and partner engagement policies.",
-    head: {
-      name: "Elena Vargas",
-      email: "elena.vargas@company.com",
-      initials: "EV",
-    },
-    employees: 16,
-    compliance: 82,
-    policies: 7,
-    status: "Active",
-    locations: ["Head Office", "Cebu"],
-    createdAt: "Jul 01, 2024",
-    avatarTone: "bg-orange-100 text-orange-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Elena Vargas",
-        email: "elena.vargas@company.com",
-        role: "Department Head",
-        initials: "EV",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Sales Ethics Policy", status: "Assigned", dueAt: "Sep 01, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "Department created",
-        detail: "Sales department added to the organization chart.",
-        at: "Jul 01, 2024 · 10:00 AM",
-      },
-    ],
-    complianceTrend: [70, 74, 79, 82],
-  },
-  {
-    id: "dept-qa",
-    name: "Quality Assurance",
-    shortName: "QA Department",
-    code: "QA",
-    description: "Ensures process quality and audit readiness across teams.",
-    head: {
-      name: "Hannah Lee",
-      email: "hannah.lee@company.com",
-      initials: "HL",
-    },
-    employees: 9,
-    compliance: 96,
-    policies: 5,
-    status: "Active",
-    locations: ["Head Office"],
-    createdAt: "Aug 14, 2024",
-    avatarTone: "bg-lime-100 text-lime-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Hannah Lee",
-        email: "hannah.lee@company.com",
-        role: "Department Head",
-        initials: "HL",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Quality Management Policy", status: "Completed", dueAt: "Jun 30, 2026" },
-    ],
-    activity: [],
-    complianceTrend: [90, 92, 94, 96],
-  },
-  {
-    id: "dept-rd",
-    name: "Research & Development",
-    shortName: "R&D Department",
-    code: "RD",
-    description: "Builds product innovations and protects intellectual property practices.",
-    head: {
-      name: "Noah Kim",
-      email: "noah.kim@company.com",
-      initials: "NK",
-    },
-    employees: 11,
-    compliance: 90,
-    policies: 8,
-    status: "Active",
-    locations: ["Head Office", "Baguio"],
-    createdAt: "Sep 05, 2024",
-    avatarTone: "bg-indigo-100 text-indigo-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Noah Kim",
-        email: "noah.kim@company.com",
-        role: "Department Head",
-        initials: "NK",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "IP Protection Policy", status: "Assigned", dueAt: "Aug 28, 2026" },
-    ],
-    activity: [],
-    complianceTrend: [82, 85, 88, 90],
-  },
-  {
-    id: "dept-fac",
-    name: "Facilities",
-    shortName: "Facilities Management",
-    code: "FC",
-    description: "Maintains workplace safety, facilities access, and site operations.",
-    head: {
-      name: "Omar Hassan",
-      email: "omar.hassan@company.com",
-      initials: "OH",
-    },
-    employees: 7,
-    compliance: 79,
-    policies: 4,
-    status: "Inactive",
-    locations: ["Head Office"],
-    createdAt: "Oct 12, 2024",
-    avatarTone: "bg-slate-200 text-slate-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Omar Hassan",
-        email: "omar.hassan@company.com",
-        role: "Department Head",
-        initials: "OH",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Workplace Safety Policy", status: "Overdue", dueAt: "Jul 10, 2026" },
-    ],
-    activity: [
-      {
-        id: "a1",
-        title: "Department deactivated",
-        detail: "Facilities temporarily marked inactive for reorganization.",
-        at: "Aug 3, 2026 · 9:15 AM",
-      },
-    ],
-    complianceTrend: [86, 84, 81, 79],
-  },
-  {
-    id: "dept-proc",
-    name: "Procurement",
-    shortName: "Procurement Department",
-    code: "PR",
-    description: "Manages vendor onboarding and purchasing compliance.",
-    head: {
-      name: "Grace Tan",
-      email: "grace.tan@company.com",
-      initials: "GT",
-    },
-    employees: 6,
-    compliance: 97,
-    policies: 5,
-    status: "Active",
-    locations: ["Head Office"],
-    createdAt: "Nov 20, 2024",
-    avatarTone: "bg-teal-100 text-teal-700",
-    employeeList: [
-      {
-        id: "e1",
-        name: "Grace Tan",
-        email: "grace.tan@company.com",
-        role: "Department Head",
-        initials: "GT",
-        status: "Active",
-      },
-    ],
-    policyList: [
-      { id: "p1", title: "Vendor Due Diligence Policy", status: "Completed", dueAt: "Jun 25, 2026" },
-    ],
-    activity: [],
-    complianceTrend: [90, 93, 95, 97],
-  },
-];
-
 const AVATAR_TONES = [
   "bg-violet-100 text-violet-700",
   "bg-sky-100 text-sky-700",
@@ -628,6 +103,61 @@ const AVATAR_TONES = [
   "bg-rose-100 text-rose-700",
   "bg-indigo-100 text-indigo-700",
 ];
+
+type DepartmentsListResponse = {
+  data: Array<Omit<Department, "avatarTone"> & { avatarTone?: string }>;
+};
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | T
+    | { message?: string | string[] }
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload && typeof payload === "object" && "message" in payload
+        ? Array.isArray(payload.message)
+          ? payload.message.join(", ")
+          : payload.message
+        : "Request failed.";
+    throw new Error(message || "Request failed.");
+  }
+
+  return payload as T;
+}
+
+function mapDepartment(
+  record: Omit<Department, "avatarTone"> & { avatarTone?: string },
+  index: number,
+): Department {
+  return {
+    ...record,
+    shortName: record.shortName || record.name,
+    createdAt:
+      typeof record.createdAt === "string"
+        ? formatEstablishedDate(
+            record.establishedDate ||
+              (record.createdAt.includes("T")
+                ? record.createdAt.slice(0, 10)
+                : record.createdAt),
+          ) || record.createdAt
+        : String(record.createdAt),
+    avatarTone: record.avatarTone ?? AVATAR_TONES[index % AVATAR_TONES.length],
+    employeeList: record.employeeList ?? [],
+    policyList: record.policyList ?? [],
+    activity: record.activity ?? [],
+    complianceTrend: record.complianceTrend ?? [0, 0, 0, 0],
+  };
+}
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -656,16 +186,11 @@ function formatEstablishedDate(value: string) {
   });
 }
 
-function resolveLocationsFromScope(locationScope: string) {
-  if (locationScope === ORGANIZATION_WIDE_SCOPE) {
-    return ["Organization-wide"];
-  }
-  const location = getLocationById(locationScope);
-  return location ? [location.name] : ["Head Office"];
-}
-
 export default function AdminDepartmentsClient() {
-  const [departments, setDepartments] = useState(MOCK_DEPARTMENTS);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | DepartmentStatus>("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -679,6 +204,24 @@ export default function AdminDepartmentsClient() {
   const [formInitialHead, setFormInitialHead] = useState<DepartmentHeadOption | null>(null);
   const filterRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  async function loadDepartments() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await requestJson<DepartmentsListResponse>("/departments");
+      setDepartments((response.data ?? []).map(mapDepartment));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Failed to load departments.");
+      setDepartments([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDepartments();
+  }, []);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -794,94 +337,49 @@ export default function AdminDepartmentsClient() {
     setMenuOpenId(null);
   }
 
-  function handleSubmitDepartment(values: DepartmentFormValues, head: DepartmentHeadOption | null) {
-    if (!values.name.trim() || !values.code.trim()) return;
+  async function handleSubmitDepartment(
+    values: DepartmentFormValues,
+    _head: DepartmentHeadOption | null,
+  ) {
+    if (!values.name.trim() || !values.code.trim() || saving) return;
 
-    const headRecord: DepartmentHead = head
-      ? {
-          id: head.id,
-          name: head.fullName,
-          email: head.email,
-          initials: head.initials,
-          jobTitle: head.jobTitle,
-        }
-      : {
-          name: "Unassigned",
-          email: "unassigned@company.com",
-          initials: "UA",
-        };
-
-    const shared = {
+    const payload = {
       name: values.name.trim(),
-      shortName: `${values.name.trim()} Department`,
       code: values.code.trim().toUpperCase().slice(0, 8),
-      description: values.description.trim() || "No description provided.",
-      head: headRecord,
+      description: values.description.trim(),
       status: values.status,
-      locations: resolveLocationsFromScope(values.locationScope),
-      establishedDate: values.establishedDate,
+      establishedDate: values.establishedDate || null,
       displayOrder: Number(values.displayOrder) || 1,
-      parentDepartmentId: values.parentDepartmentId || undefined,
-      locationScope: values.locationScope,
-      costCenter: values.costCenter.trim() || undefined,
+      headUserId: values.headUserId || null,
+      parentDepartmentId: values.parentDepartmentId || null,
+      locationScope: values.locationScope || ORGANIZATION_WIDE_SCOPE,
+      costCenter: values.costCenter.trim() || null,
       autoAssignMandatory: values.autoAssignMandatory,
       enableNotifications: values.enableNotifications,
       inheritAssignments: values.inheritAssignments,
     };
 
-    if (formMode === "edit" && editingDepartmentId) {
-      setDepartments((current) =>
-        current.map((department) =>
-          department.id === editingDepartmentId
-            ? {
-                ...department,
-                ...shared,
-                createdAt: values.establishedDate
-                  ? formatEstablishedDate(values.establishedDate)
-                  : department.createdAt,
-              }
-            : department,
-        ),
-      );
+    setSaving(true);
+    setError(null);
+    try {
+      if (formMode === "edit" && editingDepartmentId) {
+        await requestJson(`/departments/${editingDepartmentId}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await requestJson("/departments", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
       closeFormModal();
-      return;
+      await loadDepartments();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to save department.");
+    } finally {
+      setSaving(false);
     }
-
-    const next: Department = {
-      id: `dept-${Date.now()}`,
-      ...shared,
-      employees: 0,
-      compliance: 0,
-      policies: 0,
-      createdAt: values.establishedDate
-        ? formatEstablishedDate(values.establishedDate)
-        : new Date().toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          }),
-      avatarTone: AVATAR_TONES[departments.length % AVATAR_TONES.length],
-      employeeList: [],
-      policyList: [],
-      activity: [
-        {
-          id: `a-${Date.now()}`,
-          title: "Department created",
-          detail: `${values.name.trim()} was added to the organization.`,
-          at: new Date().toLocaleString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          }),
-        },
-      ],
-      complianceTrend: [0, 0, 0, 0],
-    };
-
-    setDepartments((current) => [next, ...current]);
-    closeFormModal();
   }
 
   const parentDepartmentOptions = useMemo(
@@ -1036,7 +534,31 @@ export default function AdminDepartmentsClient() {
                 </div>
               </div>
 
-              <div className="hidden overflow-x-auto lg:block">
+            {error ? (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            {loading ? (
+              <div className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500">
+                Loading departments...
+              </div>
+            ) : null}
+
+            {!loading && departments.length === 0 ? (
+              <EmptyState
+                icon={Building2}
+                title="No departments have been added yet."
+                description="Departments help organize users and policy assignments across your organization."
+                actionLabel="Add First Department"
+                onAction={openCreateModal}
+              />
+            ) : null}
+
+            {!loading && departments.length > 0 ? (
+              <>
+                <div className="hidden overflow-x-auto lg:block">
                 <table className="min-w-full text-left">
                   <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <tr>
@@ -1209,9 +731,17 @@ export default function AdminDepartmentsClient() {
               </div>
 
               {filtered.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm text-slate-500">
-                  No departments match your search or filters.
-                </div>
+                <EmptyState
+                  icon={Search}
+                  title="No matching departments"
+                  description="Try another search term or clear filters to see all departments."
+                  actionLabel="Clear filters"
+                  onAction={() => {
+                    setSearch("");
+                    setStatusFilter("");
+                  }}
+                  className="py-12"
+                />
               ) : null}
 
               <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
@@ -1257,7 +787,10 @@ export default function AdminDepartmentsClient() {
                   </button>
                 </div>
               </div>
+              </>
+            ) : null}
           </article>
+          <ModuleGuide guideKey="Departments" />
         </div>
       </section>
 
