@@ -94,6 +94,7 @@ export default function Home() {
 
     try {
       const apiBaseUrl = getApiBaseUrl();
+      console.log("API BASE URL =", apiBaseUrl);
       if (!apiBaseUrl) {
         throw new Error(
           "API URL is not configured. Set NEXT_PUBLIC_API_BASE_URL in Vercel to your Railway URL, then redeploy.",
