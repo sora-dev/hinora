@@ -5,44 +5,16 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import * as fs from 'node:fs';
-import { extname, join } from 'node:path';
+import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { PoliciesService } from './policies.service';
 
-const uploadsDirectory = join(process.cwd(), 'uploads', 'policies');
-
-function ensureUploadsDirectory() {
-  if (!fs.existsSync(uploadsDirectory)) {
-    fs.mkdirSync(uploadsDirectory, { recursive: true });
-  }
-
-  return uploadsDirectory;
-}
-
-const policyStorage = diskStorage({
-  destination: (_request, _file, callback) => {
-    callback(null, ensureUploadsDirectory());
-  },
-  filename: (_request, file, callback) => {
-    const extension = extname(file.originalname).toLowerCase();
-    const name = file.originalname
-      .replace(extension, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 48);
-
-    callback(
-      null,
-      `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${name || 'policy'}${extension}`,
-    );
-  },
-});
+const policyUploadStorage = memoryStorage();
 
 @Controller('policies')
 export class PoliciesController {
@@ -53,9 +25,36 @@ export class PoliciesController {
     return this.policiesService.listPolicies(query);
   }
 
-  @Get(':id')
-  getPolicy(@Param('id') id: string) {
-    return this.policiesService.getPolicyById(id);
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: policyUploadStorage,
+      limits: {
+        fileSize: 50 * 1024 * 1024,
+      },
+    }),
+  )
+  uploadPolicy(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.policiesService.uploadPolicy(file, body);
+  }
+
+  @Get(':id/file')
+  async getPolicyFile(@Param('id') id: string, @Res() response: Response) {
+    const result = await this.policiesService.getPolicyFile(id);
+
+    if (result.kind === 'redirect') {
+      return response.redirect(result.url);
+    }
+
+    response.setHeader('Content-Type', result.contentType);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename="${result.fileName.replace(/"/g, '')}"`,
+    );
+    return response.send(result.buffer);
   }
 
   @Post(':id/reanalyze')
@@ -66,16 +65,8 @@ export class PoliciesController {
     return this.policiesService.reanalyzePolicy(id, body);
   }
 
-  @Post('upload')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: policyStorage,
-    }),
-  )
-  uploadPolicy(
-    @UploadedFile() file: Express.Multer.File | undefined,
-    @Body() body: Record<string, unknown>,
-  ) {
-    return this.policiesService.uploadPolicy(file, body);
+  @Get(':id')
+  getPolicy(@Param('id') id: string) {
+    return this.policiesService.getPolicyById(id);
   }
 }

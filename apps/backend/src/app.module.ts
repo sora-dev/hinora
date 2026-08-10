@@ -10,11 +10,13 @@ import { PoliciesModule } from './policies/policies.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReadingProgressModule } from './reading-progress/reading-progress.module';
 import { RolesPermissionsModule } from './roles-permissions/roles-permissions.module';
+import { StorageModule } from './storage/storage.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
     PrismaModule,
+    StorageModule,
     UsersModule,
     AuthModule,
     RolesPermissionsModule,

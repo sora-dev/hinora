@@ -391,12 +391,8 @@ function getStatusTone(status: PolicyStatus) {
   return "bg-violet-50 text-[var(--color-ai-accent)]";
 }
 
-function getAbsoluteFileUrl(filePath: string, apiBaseUrl: string) {
-  if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
-    return filePath;
-  }
-
-  return `${apiBaseUrl}${filePath}`;
+function getPolicyFileUrl(policyId: string, apiBaseUrl: string) {
+  return `${apiBaseUrl}/policies/${policyId}/file`;
 }
 
 function getReaderHref(mode: "admin" | "employee", policyId: string) {
@@ -605,13 +601,11 @@ export default function PolicyReaderExperience({
 
   const policy = policyResponse?.data ?? null;
   const relatedPolicies = policyResponse?.relatedPolicies ?? [];
-  const documentUrl = policy ? getAbsoluteFileUrl(policy.filePath, resolvedApiBaseUrl) : "";
+  const documentUrl = policy
+    ? getPolicyFileUrl(policy.id, resolvedApiBaseUrl)
+    : "";
   const canPreviewPdf = Boolean(
-    policy &&
-      policy.fileType.toLowerCase().includes("pdf") &&
-      (policy.filePath.startsWith("/uploads/") ||
-        policy.filePath.startsWith("http://") ||
-        policy.filePath.startsWith("https://")),
+    policy && policy.fileType.toLowerCase().includes("pdf"),
   );
 
   const summaryHighlights = useMemo(() => (policy ? getSummaryHighlights(policy) : []), [policy]);

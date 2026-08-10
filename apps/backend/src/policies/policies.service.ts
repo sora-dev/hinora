@@ -4,16 +4,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  PolicyAnalysisProvider,
   PolicyAnalysisStatus,
   PolicyDocumentType,
   PolicyStatus,
   Prisma,
 } from '@prisma/client';
 import * as fs from 'node:fs';
+import { join } from 'node:path';
 import { PolicyAnalysisService } from './policy-analysis.service';
 import { PolicyContentExtractorService } from './policy-content-extractor.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SupabaseStorageService } from '../storage/supabase-storage.service';
 
 type ListPoliciesQuery = Record<string, string | undefined>;
 
@@ -38,6 +39,7 @@ export class PoliciesService {
     private readonly prisma: PrismaService,
     private readonly policyContentExtractor: PolicyContentExtractorService,
     private readonly policyAnalysisService: PolicyAnalysisService,
+    private readonly storage: SupabaseStorageService,
   ) {}
 
   async listPolicies(query: ListPoliciesQuery) {
@@ -121,6 +123,12 @@ export class PoliciesService {
       throw new BadRequestException('file is required.');
     }
 
+    if (!file.buffer?.length) {
+      throw new BadRequestException(
+        'file buffer is missing. Policy uploads must use memory storage.',
+      );
+    }
+
     const title = this.readRequiredString(body.title, 'title');
     const description = this.normalizeOptionalString(body.description);
     const categoryId = this.readRequiredString(body.categoryId, 'categoryId');
@@ -135,9 +143,10 @@ export class PoliciesService {
     });
 
     if (!category) {
-      fs.unlinkSync(file.path);
       throw new NotFoundException(`Category ${categoryId} was not found.`);
     }
+
+    const uploaded = await this.storage.uploadPolicyFile(file);
 
     try {
       const extractedContent =
@@ -148,7 +157,7 @@ export class PoliciesService {
           title,
           description,
           fileName: file.originalname,
-          filePath: `/uploads/policies/${file.filename}`,
+          filePath: uploaded.filePath,
           fileType: file.mimetype,
           department,
           type,
@@ -169,9 +178,42 @@ export class PoliciesService {
         data: this.toPolicyResponse(policy),
       };
     } catch (error: unknown) {
-      fs.unlinkSync(file.path);
       this.handlePrismaError(error);
     }
+  }
+
+  async getPolicyFile(id: string) {
+    const policy = await this.findPolicyById(id);
+
+    if (!policy) {
+      throw new NotFoundException(`Policy ${id} was not found.`);
+    }
+
+    if (this.storage.isStorageFilePath(policy.filePath)) {
+      const url = await this.storage.createSignedUrl(policy.filePath);
+      return { kind: 'redirect' as const, url };
+    }
+
+    if (this.storage.isLegacyLocalFilePath(policy.filePath)) {
+      const absolutePath = this.resolveLegacyLocalPath(policy.filePath);
+
+      if (!absolutePath || !fs.existsSync(absolutePath)) {
+        throw new NotFoundException(
+          'This policy file is missing from local storage. Re-upload the PDF so it is stored in Supabase Storage.',
+        );
+      }
+
+      return {
+        kind: 'buffer' as const,
+        buffer: fs.readFileSync(absolutePath),
+        contentType: policy.fileType || 'application/pdf',
+        fileName: policy.fileName,
+      };
+    }
+
+    // Fallback: treat unknown paths as storage object keys.
+    const url = await this.storage.createSignedUrl(policy.filePath);
+    return { kind: 'redirect' as const, url };
   }
 
   async getPolicyById(id: string) {
@@ -275,10 +317,25 @@ export class PoliciesService {
       return policy;
     }
 
-    const extractedContent = await this.policyContentExtractor.extractFromStoredFile(
-      policy.filePath,
-      policy.fileType,
-    );
+    let extractedContent: string | null = null;
+
+    if (this.storage.isStorageFilePath(policy.filePath)) {
+      try {
+        const buffer = await this.storage.downloadFile(policy.filePath);
+        extractedContent = await this.policyContentExtractor.extractFromBuffer(
+          buffer,
+          policy.fileType,
+          policy.fileName,
+        );
+      } catch {
+        extractedContent = null;
+      }
+    } else {
+      extractedContent = await this.policyContentExtractor.extractFromStoredFile(
+        policy.filePath,
+        policy.fileType,
+      );
+    }
 
     if (!extractedContent) {
       return policy;
@@ -291,6 +348,16 @@ export class PoliciesService {
       },
       include: policyInclude,
     });
+  }
+
+  private resolveLegacyLocalPath(filePath: string) {
+    const normalizedPath = filePath.replace(/^\/+/, '');
+    const candidates = [
+      join(process.cwd(), normalizedPath),
+      join(process.cwd(), 'apps', 'backend', normalizedPath),
+    ];
+
+    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
   }
 
   private async persistPolicyAnalysis(

@@ -9,9 +9,60 @@ export class PolicyContentExtractorService {
   private readonly logger = new Logger(PolicyContentExtractorService.name);
 
   async extractFromUploadedFile(
-    file: Pick<Express.Multer.File, 'path' | 'mimetype'>,
+    file: Pick<Express.Multer.File, 'path' | 'mimetype' | 'buffer' | 'originalname'>,
   ): Promise<string | null> {
-    return this.extractFromAbsoluteFilePath(file.path, file.mimetype);
+    if (file.buffer && file.buffer.length > 0) {
+      return this.extractFromBuffer(
+        file.buffer,
+        file.mimetype,
+        file.originalname,
+      );
+    }
+
+    if (file.path) {
+      return this.extractFromAbsoluteFilePath(file.path, file.mimetype);
+    }
+
+    return null;
+  }
+
+  async extractFromBuffer(
+    buffer: Buffer,
+    fileType: string,
+    fileNameHint = 'document.pdf',
+  ): Promise<string | null> {
+    try {
+      const extension = extname(fileNameHint).toLowerCase();
+      const normalizedFileType = fileType.toLowerCase();
+
+      if (normalizedFileType.includes('pdf') || extension === '.pdf') {
+        const parser = new PDFParse({ data: buffer });
+
+        try {
+          const parsed = await parser.getText();
+          return this.normalizeExtractedText(parsed.text);
+        } finally {
+          await parser.destroy();
+        }
+      }
+
+      if (
+        normalizedFileType.startsWith('text/') ||
+        extension === '.txt' ||
+        extension === '.md'
+      ) {
+        return this.normalizeExtractedText(buffer.toString('utf8'));
+      }
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown extraction error.';
+
+      this.logger.warn(
+        `Unable to extract policy content from buffer (${fileNameHint}): ${message}`,
+      );
+    }
+
+    return null;
   }
 
   async extractFromStoredFile(
@@ -36,32 +87,8 @@ export class PolicyContentExtractorService {
     }
 
     try {
-      const extension = extname(absoluteFilePath).toLowerCase();
-      const normalizedFileType = fileType.toLowerCase();
-
-      if (
-        normalizedFileType.includes('pdf') ||
-        extension === '.pdf'
-      ) {
-        const buffer = await fsPromises.readFile(absoluteFilePath);
-        const parser = new PDFParse({ data: buffer });
-
-        try {
-          const parsed = await parser.getText();
-          return this.normalizeExtractedText(parsed.text);
-        } finally {
-          await parser.destroy();
-        }
-      }
-
-      if (
-        normalizedFileType.startsWith('text/') ||
-        extension === '.txt' ||
-        extension === '.md'
-      ) {
-        const text = await fsPromises.readFile(absoluteFilePath, 'utf8');
-        return this.normalizeExtractedText(text);
-      }
+      const buffer = await fsPromises.readFile(absoluteFilePath);
+      return this.extractFromBuffer(buffer, fileType, absoluteFilePath);
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'Unknown extraction error.';
@@ -69,15 +96,14 @@ export class PolicyContentExtractorService {
       this.logger.warn(
         `Unable to extract policy content from ${absoluteFilePath}: ${message}`,
       );
+      return null;
     }
-
-    return null;
   }
 
   private resolveStoredFilePath(filePath: string) {
     const trimmedPath = filePath.trim();
 
-    if (!trimmedPath) {
+    if (!trimmedPath || trimmedPath.startsWith('storage:')) {
       return null;
     }
 
@@ -98,7 +124,7 @@ export class PolicyContentExtractorService {
     const normalizedText = text
       .replace(/\r\n/g, '\n')
       .replace(/\u0000/g, '')
-      .replace(/[^\S\n]+/g, ' ')
+      .replace(/[ \t]+\n/g, '\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
