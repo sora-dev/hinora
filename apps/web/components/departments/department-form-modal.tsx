@@ -21,8 +21,8 @@ import {
   ORGANIZATION_WIDE_SCOPE,
   type LocationOption,
 } from "./location-options";
+import { API_BASE_URL } from "../../lib/api-base-url";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 const DESCRIPTION_MAX = 500;
 
 type LocationsOptionsResponse = {

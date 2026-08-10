@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { BookOpenText, Bot, ChevronRight, ShieldCheck } from "lucide-react";
 import { DashboardPanel } from "./primitives";
 import { getSessionUserIdentity } from "./session";
+import { API_BASE_URL } from "../../lib/api-base-url";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 type ContinueReadingItem = {
   policyId: string;

@@ -25,9 +25,7 @@ import { DashboardMobileNav, DashboardSidebar } from "../dashboard/dashboard-nav
 import { DropdownSelect } from "../ui/dropdown-select";
 import { EmptyState } from "../ui/empty-state";
 import { ModuleGuide } from "../dashboard/module-guide";
-
-const DEFAULT_API_BASE_URL = "http://localhost:3001";
-const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
+import { getApiBaseUrl } from "../../lib/api-base-url";
 
 type PolicyStatus = "DRAFT" | "UNDER_REVIEW" | "PUBLISHED" | "ARCHIVED";
 type PolicyType = "POLICY" | "GUIDELINE" | "PROCEDURE";
@@ -169,12 +167,7 @@ function normalizeApiBaseUrl(value: string) {
 }
 
 function getApiBaseCandidates() {
-  const candidates = [
-    RAW_API_BASE_URL ? normalizeApiBaseUrl(RAW_API_BASE_URL) : "",
-    DEFAULT_API_BASE_URL,
-  ].filter(Boolean);
-
-  return [...new Set(candidates)];
+  return [normalizeApiBaseUrl(getApiBaseUrl())];
 }
 
 async function requestJson<T>(path: string) {
@@ -332,7 +325,7 @@ export default function PolicyLibraryExperience({
   const [isPoliciesLoading, setIsPoliciesLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [resolvedApiBaseUrl, setResolvedApiBaseUrl] = useState(
-    getApiBaseCandidates()[0] ?? DEFAULT_API_BASE_URL,
+    getApiBaseCandidates()[0],
   );
 
   useEffect(() => {

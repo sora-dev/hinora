@@ -51,6 +51,7 @@ import {
 } from "../../../components/ui/dropdown-select";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { ModuleGuide } from "../../../components/dashboard/module-guide";
+import { API_BASE_URL } from "../../../lib/api-base-url";
 
 type UserStatus = "ACTIVE" | "INACTIVE" | "LOCKED";
 type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
@@ -160,7 +161,6 @@ type UserFormState = {
   password: string;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 function generateSecurePassword() {
   const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";

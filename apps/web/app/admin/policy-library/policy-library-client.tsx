@@ -29,6 +29,7 @@ import UploadPolicyWizard, {
   type UploadWizardSubmitPayload,
 } from "../../../components/policy-library/upload-policy-wizard";
 import { getHinoraSession } from "../../../components/dashboard/session";
+import { API_BASE_URL } from "../../../lib/api-base-url";
 
 type PolicyStatus = "DRAFT" | "UNDER_REVIEW" | "PUBLISHED" | "ARCHIVED";
 type PolicyType = "POLICY" | "GUIDELINE" | "PROCEDURE";
@@ -90,7 +91,6 @@ type PoliciesResponse = {
 type PolicyRecordLike = Partial<PolicyRecord> &
   Pick<PolicyRecord, "id" | "title" | "fileName" | "filePath" | "fileType" | "createdAt" | "updatedAt" | "createdBy">;
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");

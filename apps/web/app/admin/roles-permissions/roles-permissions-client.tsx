@@ -28,8 +28,8 @@ import {
   groupPermissionsBySection,
   permissionModules,
 } from "../../../components/dashboard/permission-modules";
+import { API_BASE_URL } from "../../../lib/api-base-url";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 type RoleType = "SYSTEM" | "CUSTOM";
 

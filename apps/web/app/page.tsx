@@ -16,6 +16,7 @@ import {
   UserCog,
   UserRound,
 } from "lucide-react";
+import { getApiBaseUrl } from "../lib/api-base-url";
 
 const testAccounts = [
   {
@@ -39,7 +40,6 @@ const testAccounts = [
 ] as const;
 
 const sessionStorageKey = "hinora_session";
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 type LoginFormSubmitEvent = Parameters<NonNullable<ComponentProps<"form">["onSubmit"]>>[0];
 
 function BrandLockup() {
@@ -93,6 +93,13 @@ export default function Home() {
     setErrorMessage("");
 
     try {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw new Error(
+          "API URL is not configured. Set NEXT_PUBLIC_API_BASE_URL in Vercel to your Railway URL, then redeploy.",
+        );
+      }
+
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: "POST",
         headers: {

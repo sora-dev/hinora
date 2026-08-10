@@ -33,8 +33,8 @@ import LocationFormModal, {
 import { DropdownSelect } from "../../../components/ui/dropdown-select";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { ModuleGuide } from "../../../components/dashboard/module-guide";
+import { API_BASE_URL } from "../../../lib/api-base-url";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 const PAGE_SIZE = 5;
 
 type LocationsListResponse = {

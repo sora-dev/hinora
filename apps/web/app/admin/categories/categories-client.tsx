@@ -37,6 +37,7 @@ import {
 } from "../../../components/ui/dropdown-select";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { ModuleGuide } from "../../../components/dashboard/module-guide";
+import { API_BASE_URL } from "../../../lib/api-base-url";
 
 type CategoryStatus = "ACTIVE" | "INACTIVE";
 
@@ -82,7 +83,6 @@ type CategoryDetailResponse = {
   data: CategoryNode;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 const categoryTree: CategoryNode[] = [
   {

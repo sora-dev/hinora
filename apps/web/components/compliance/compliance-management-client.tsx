@@ -53,6 +53,7 @@ import {
 import { DropdownSelect } from "../ui/dropdown-select";
 import { EmptyState } from "../ui/empty-state";
 import { ModuleGuide } from "../dashboard/module-guide";
+import { API_BASE_URL } from "../../lib/api-base-url";
 
 type PolicyTrackStatus = "ON_TRACK" | "AT_RISK" | "OVERDUE" | "NOT_STARTED";
 type PolicyLifecycleStatus = "DRAFT" | "UNDER_REVIEW" | "PUBLISHED" | "ARCHIVED";
@@ -127,7 +128,6 @@ type PolicyListItem = {
   Icon: LucideIcon;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 type EmployeeRow = {
   id: string;
