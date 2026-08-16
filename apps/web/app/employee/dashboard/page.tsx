@@ -171,7 +171,7 @@ export default function EmployeeDashboardPage() {
             <p className="mt-1 text-slate-500">Welcome back to Hinora. Ask, read, learn.</p>
           </section>
 
-          <section className="mb-3 grid items-center gap-4 rounded-[18px] border border-slate-200 bg-gradient-to-b from-[rgba(124,58,237,0.08)] to-white px-5 py-[18px] xl:grid-cols-[minmax(0,1.5fr)_280px]">
+          <section className="mb-3 grid items-center gap-4 rounded-[18px] border border-slate-200 bg-gradient-to-b from-[var(--color-hero-from)] to-[var(--color-hero-via)] px-5 py-[18px] xl:grid-cols-[minmax(0,1.5fr)_280px]">
             <div>
               <h2 className="text-[1.55rem] font-bold text-slate-900">Ask Hinora anything about our policies.</h2>
 

@@ -17,6 +17,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { getApiBaseUrl } from "../lib/api-base-url";
+import { collectDeviceClientInfo } from "../lib/device-info";
 
 const testAccounts = [
   {
@@ -109,6 +110,7 @@ export default function Home() {
         body: JSON.stringify({
           email,
           password,
+          ...collectDeviceClientInfo(),
         }),
       });
 
@@ -116,6 +118,7 @@ export default function Home() {
         | {
             message?: string;
             accessToken?: string;
+            sessionId?: string;
             redirectTo?: string;
             user?: {
               id: string;
@@ -133,6 +136,7 @@ export default function Home() {
 
       const sessionPayload = {
         accessToken: payload.accessToken,
+        sessionId: payload.sessionId,
         userId: payload.user.id,
         email: payload.user.email,
         role: payload.user.role,

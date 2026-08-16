@@ -976,7 +976,7 @@ export default function PolicyReaderExperience({
   }
 
   return (
-    <main className="grid min-h-screen bg-[#f4f7fb] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
+    <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
       <DashboardSidebar variant={mode} />
 
       <section className="flex min-w-0 flex-col">

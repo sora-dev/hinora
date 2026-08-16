@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ChevronDown,
-  CircleHelp,
   EllipsisVertical,
   Eye,
   FileText,
@@ -398,8 +397,6 @@ export default function AssessmentBuilderClient({
         <DashboardTopbar
           searchPlaceholder="Search policies, employees, departments..."
           notificationCount={3}
-          secondaryActionIcon={CircleHelp}
-          secondaryActionLabel="Help"
           profileName="John Dela Cruz"
           profileRole="Administrator"
           avatarText="JD"

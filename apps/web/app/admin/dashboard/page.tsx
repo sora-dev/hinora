@@ -5,7 +5,6 @@ import {
   Bot,
   CalendarDays,
   CircleCheckBig,
-  CircleHelp,
   ClipboardList,
   Database,
   Files,
@@ -156,15 +155,13 @@ export const metadata: Metadata = {
 
 export default function AdminDashboardPage() {
   return (
-    <main className="grid min-h-screen bg-[#f4f7fb] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
+    <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
       <DashboardSidebar variant="admin" />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
           searchPlaceholder="Search policies, users, documents, or ask Hinora..."
           notificationCount={2}
-          secondaryActionIcon={CircleHelp}
-          secondaryActionLabel="Help"
           profileName="Admin User"
           profileRole="System Administrator"
           avatarText="A"

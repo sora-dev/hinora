@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  CircleHelp,
   Filter,
   MoreVertical,
   Network,
@@ -316,8 +315,6 @@ export default function AdminLocationsClient() {
         <DashboardTopbar
           searchPlaceholder="Search locations..."
           notificationCount={3}
-          secondaryActionIcon={CircleHelp}
-          secondaryActionLabel="Help"
           profileName="John Dela Cruz"
           profileRole="Administrator"
           avatarText="JD"
@@ -333,11 +330,6 @@ export default function AdminLocationsClient() {
               <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">
                 Locations
               </h1>
-              <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                <span className="font-semibold text-slate-600">Dashboard</span>
-                <span>›</span>
-                <span>Location</span>
-              </div>
               <p className="mt-1 text-sm text-slate-500">
                 Manage all organizational offices and locations.
               </p>

@@ -9,7 +9,6 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleDot,
-  CircleHelp,
   Clock3,
   Eye,
   EyeOff,
@@ -859,8 +858,6 @@ export default function AdminUsersClient() {
         <DashboardTopbar
           searchPlaceholder="Search users, roles, departments..."
           notificationCount={3}
-          secondaryActionIcon={CircleHelp}
-          secondaryActionLabel="Help"
           profileName="John Dela Cruz"
           profileRole="Administrator"
           avatarText="JD"
@@ -874,11 +871,9 @@ export default function AdminUsersClient() {
           <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">Users</h1>
-              <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                <span className="font-semibold text-slate-600">Dashboard</span>
-                <span>›</span>
-                <span>Users</span>
-              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                Create, manage, and organize system users and their access.
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-3">

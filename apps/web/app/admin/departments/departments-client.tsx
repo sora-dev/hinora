@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  CircleHelp,
   Filter,
   MoreVertical,
   Plus,
@@ -438,8 +437,6 @@ export default function AdminDepartmentsClient() {
         <DashboardTopbar
           searchPlaceholder="Search departments..."
           notificationCount={3}
-          secondaryActionIcon={CircleHelp}
-          secondaryActionLabel="Help"
           profileName="John Dela Cruz"
           profileRole="Administrator"
           avatarText="JD"
@@ -453,11 +450,9 @@ export default function AdminDepartmentsClient() {
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">Departments</h1>
-              <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                <span className="font-semibold text-slate-600">Dashboard</span>
-                <span>›</span>
-                <span>Departments</span>
-              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                Create and manage departments, heads, and location scope.
+              </p>
             </div>
             <button
               type="button"

@@ -13,7 +13,6 @@ import {
   Grid2X2,
   Headphones,
   List,
-  MoonStar,
   MoreHorizontal,
   Search,
   ShieldCheck,
@@ -292,16 +291,16 @@ function LibraryIllustration() {
           <stop offset="100%" stopColor="#2563EB" />
         </linearGradient>
       </defs>
-      <ellipse cx="154" cy="150" rx="84" ry="14" fill="#E9E7FF" />
-      <path d="M85 118c0-9 7-16 16-16h41v38H101c-9 0-16-7-16-16v-6Z" fill="#E0E7FF" />
+      <ellipse cx="154" cy="150" rx="84" ry="14" fill="var(--color-hero-illustration-soft)" />
+      <path d="M85 118c0-9 7-16 16-16h41v38H101c-9 0-16-7-16-16v-6Z" fill="var(--color-hero-illustration-mid)" />
       <rect x="108" y="40" width="78" height="90" rx="12" fill="url(#policy-library-book)" opacity="0.92" />
       <rect x="122" y="28" width="82" height="96" rx="12" fill="url(#policy-library-book)" />
       <path d="M141 44h44M141 57h44M141 70h32" fill="none" stroke="#DDD6FE" strokeWidth="6" strokeLinecap="round" />
-      <path d="M195 58c0 11 7 21 18 24 11-3 18-13 18-24V47l-18-7-18 7v11Z" fill="#fff" opacity="0.94" />
+      <path d="M195 58c0 11 7 21 18 24 11-3 18-13 18-24V47l-18-7-18 7v11Z" fill="var(--color-hero-illustration-paper)" opacity="0.94" />
       <path d="m205 58 7 8 12-15" fill="none" stroke="#7C3AED" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
       <rect x="72" y="84" width="32" height="42" rx="10" fill="#DDD6FE" />
       <path d="M82 95h12M82 105h12M82 115h10" fill="none" stroke="#A78BFA" strokeWidth="5" strokeLinecap="round" />
-      <path d="M42 98c0-8 6-14 14-14h10v52H56c-8 0-14-6-14-14V98Z" fill="#E9E7FF" />
+      <path d="M42 98c0-8 6-14 14-14h10v52H56c-8 0-14-6-14-14V98Z" fill="var(--color-hero-illustration-soft)" />
       <path d="M233 28 237 37 247 39 239 45 241 55 233 49 224 55 227 45 219 39 229 37 233 28Z" fill="#C4B5FD" />
       <path d="M246 72 249 78 256 80 249 83 247 90 244 83 237 81 244 78 246 72Z" fill="#DDD6FE" />
     </svg>
@@ -433,7 +432,7 @@ export default function PolicyLibraryExperience({
   const isLoading = isCategoriesLoading || isPoliciesLoading;
 
   return (
-    <main className="grid min-h-screen bg-[#f4f7fb] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
+    <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
       <DashboardSidebar variant={mode} />
 
       <section className="flex min-w-0 flex-col">
@@ -441,8 +440,6 @@ export default function PolicyLibraryExperience({
           searchPlaceholder="Search policies, manuals, circulars, or keywords..."
           searchMaxWidthClassName="max-w-[660px]"
           notificationCount={3}
-          secondaryActionIcon={MoonStar}
-          secondaryActionLabel="Theme"
           profileName={profileName}
           profileRole={profileRole}
           avatarText={avatarText}
@@ -462,10 +459,10 @@ export default function PolicyLibraryExperience({
 
           <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_280px]">
             <div className="space-y-4">
-              <section className="grid gap-4 rounded-[20px] border border-slate-200 bg-gradient-to-br from-[rgba(124,58,237,0.08)] via-white to-[rgba(37,99,235,0.04)] px-5 py-5 lg:grid-cols-[minmax(0,1fr)_240px]">
+              <section className="grid gap-4 rounded-[20px] border border-slate-200 bg-gradient-to-br from-[var(--color-hero-from)] via-[var(--color-hero-via)] to-[var(--color-hero-to)] px-5 py-5 lg:grid-cols-[minmax(0,1fr)_240px]">
                 <div>
                   <h2 className="text-[1.55rem] font-bold text-slate-900">Find the policy you need</h2>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="mt-1 text-sm text-slate-600">
                     Search or browse our complete collection of policies and documents.
                   </p>
 

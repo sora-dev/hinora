@@ -6,7 +6,8 @@ Policy files are stored in **Supabase Storage**, not on the Railway/local disk.
 
 1. In the Supabase dashboard, open **Storage** and ensure a private bucket named `policies` exists  
    (the API also tries to create it on boot when credentials are set).
-2. Set these env vars on Railway and in `apps/backend/.env`:
+2. Set these env vars in `apps/backend/.env` **and** in the Railway service Variables tab
+   (Railway does not use your local `.env` file):
 
 ```bash
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
@@ -15,7 +16,11 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 Use the **service_role** key (server only). Never expose it to the Next.js/Vercel app.
 
-3. Restart the backend after setting the variables.
+3. Restart the local backend **and** redeploy/restart Railway after setting the variables.
+
+If the PDF appears in the Supabase bucket but the reader shows
+`SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set`, the API host
+(usually Railway) is missing those variables even though upload worked from another environment.
 
 ## How it works
 

@@ -18,6 +18,11 @@ export class UsersController {
     return this.usersService.listUsers(query);
   }
 
+  @Get(':id')
+  getUser(@Param('id') id: string) {
+    return this.usersService.getUser(id);
+  }
+
   @Post()
   createUser(@Body() body: Record<string, unknown>) {
     return this.usersService.createUser(body);

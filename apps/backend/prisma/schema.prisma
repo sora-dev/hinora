@@ -122,6 +122,29 @@ model User {
   certificates        Certificate[]
   testResults         TestResult[]
   readingProgress     PolicyReadingProgress[]
+  sessions            UserSession[]
+}
+
+model UserSession {
+  id           String    @id @default(uuid())
+  userId       String
+  fingerprint  String?
+  deviceName   String
+  deviceType   String    @default("desktop")
+  browser      String    @default("")
+  os           String    @default("")
+  userAgent    String    @default("")
+  ipAddress    String    @default("")
+  location     String    @default("Unknown location")
+  firstLoginAt DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
 }
 
 model Location {

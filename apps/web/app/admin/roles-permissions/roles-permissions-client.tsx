@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import type { ReactNode } from "react";
 import {
-  CircleHelp,
   Copy,
   Eye,
   FileDown,
@@ -470,8 +469,6 @@ export default function AdminRolesPermissionsClient() {
         <DashboardTopbar
           searchPlaceholder="Search roles, modules, or permissions..."
           notificationCount={3}
-          secondaryActionIcon={CircleHelp}
-          secondaryActionLabel="Help"
           profileName="John Dela Cruz"
           profileRole="Administrator"
           avatarText="JD"
@@ -484,13 +481,9 @@ export default function AdminRolesPermissionsClient() {
         <div className="px-4 py-5 md:px-5">
           <div className="mb-5">
             <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">Roles &amp; Permissions</h1>
-            <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-              <span className="font-semibold text-slate-600">Dashboard</span>
-              <span>›</span>
-              <span>Roles &amp; Permissions</span>
-              <span>›</span>
-              <span>{activeTab === "roles" ? "Roles" : "Permission Matrix"}</span>
-            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              Define roles and control what each role can view, create, edit, and approve.
+            </p>
           </div>
 
           {errorMessage ? (

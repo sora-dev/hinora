@@ -241,6 +241,19 @@ export class UsersService {
     };
   }
 
+  async getUser(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: userInclude,
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User ${id} was not found.`);
+    }
+
+    return this.toUserResponse(user);
+  }
+
   async updateUser(id: string, body: Record<string, unknown>) {
     await this.ensureUserExists(id);
     const input = await this.parseUpdateInput(body);

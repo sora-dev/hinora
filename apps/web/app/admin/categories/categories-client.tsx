@@ -6,7 +6,6 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  CircleHelp,
   Download,
   FileText,
   Files,
@@ -886,14 +885,12 @@ export default function AdminCategoriesClient() {
 
   if (!selectedCategory && !isLoading) {
     return (
-      <main className="grid min-h-screen bg-[#f4f7fb] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
+      <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
         <DashboardSidebar variant="admin" />
         <section className="flex min-w-0 flex-col">
           <DashboardTopbar
             searchPlaceholder="Search categories, policies, or departments..."
             notificationCount={3}
-            secondaryActionIcon={CircleHelp}
-            secondaryActionLabel="Help"
             profileName="John Dela Cruz"
             profileRole="Administrator"
             avatarText="JD"
@@ -992,8 +989,6 @@ export default function AdminCategoriesClient() {
         <DashboardTopbar
           searchPlaceholder="Search policies, documents, or categories..."
           notificationCount={3}
-          secondaryActionIcon={CircleHelp}
-          secondaryActionLabel="Help"
           profileName="John Dela Cruz"
           profileRole="Administrator"
           avatarText="JD"
@@ -1017,12 +1012,7 @@ export default function AdminCategoriesClient() {
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">Categories</h1>
-              <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                <span className="font-semibold text-slate-600">Dashboard</span>
-                <span>›</span>
-                <span>Categories</span>
-              </div>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-slate-500">
                 Organize policies into logical groups to help users find information easily.
               </p>
             </div>

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Image from "next/image";
 import type { LucideIcon } from "lucide-react";
 import { Bell, Menu } from "lucide-react";
+import { ThemeToggle } from "../theme/theme-toggle";
 import GlobalCommandBar from "./global-command-bar";
 import SessionProfileDropdown from "./session-profile-dropdown";
 
@@ -107,6 +108,8 @@ export function DashboardTopbar({
             <SecondaryActionIcon className="h-5 w-5" />
           </button>
         ) : null}
+
+        <ThemeToggle />
 
         <SessionProfileDropdown
           profileName={profileName}

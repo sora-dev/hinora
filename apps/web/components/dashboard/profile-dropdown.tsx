@@ -17,6 +17,8 @@ import {
   User,
 } from "lucide-react";
 import { getProfileHrefFromPathname } from "./navigation";
+import { getApiBaseUrl } from "../../lib/api-base-url";
+import { getHinoraSession } from "./session";
 
 type ProfileDropdownProps = {
   profileName: string;
@@ -69,7 +71,25 @@ export default function ProfileDropdown({
     };
   }, []);
 
-  function handleSignOut() {
+  async function handleSignOut() {
+    const session = getHinoraSession();
+    const apiBaseUrl = getApiBaseUrl();
+    if (session?.userId && apiBaseUrl) {
+      try {
+        await fetch(`${apiBaseUrl}/auth/logout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: session.userId,
+            sessionId: session.sessionId,
+          }),
+          keepalive: true,
+        });
+      } catch {
+        // Local sign-out should still continue.
+      }
+    }
+
     window.localStorage.removeItem(sessionStorageKey);
     router.push("/");
   }

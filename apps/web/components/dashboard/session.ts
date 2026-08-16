@@ -2,6 +2,7 @@ const sessionStorageKey = "hinora_session";
 
 export type HinoraSession = {
   accessToken?: string;
+  sessionId?: string;
   userId?: string;
   email?: string;
   role?: string;
@@ -21,6 +22,15 @@ export function getHinoraSession(): HinoraSession | null {
   } catch {
     return null;
   }
+}
+
+export function patchHinoraSession(patch: Partial<HinoraSession>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const current = getHinoraSession() ?? {};
+  window.localStorage.setItem(sessionStorageKey, JSON.stringify({ ...current, ...patch }));
 }
 
 export function getSessionUserIdentity() {

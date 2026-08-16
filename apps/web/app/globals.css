@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
  :root {
   --color-sidebar: #0b1f3a;
   --color-sidebar-end: #102a56;
@@ -20,10 +22,102 @@
   --color-success: #22c55e;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
+  --color-hero-from: rgba(124, 58, 237, 0.08);
+  --color-hero-via: #ffffff;
+  --color-hero-to: rgba(37, 99, 235, 0.04);
+  --color-hero-illustration-soft: #e9e7ff;
+  --color-hero-illustration-mid: #e0e7ff;
+  --color-hero-illustration-paper: #ffffff;
 }
 
 html {
   color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+  --color-background: #0b1220;
+  --color-card: #141b2d;
+  --color-border: #243044;
+  --color-text-primary: #e8eef8;
+  --color-text-secondary: #94a3b8;
+  --color-nav-section: #94a3b8;
+  --color-nav-item: #cbd5e1;
+
+  --color-slate-50: #0b1220;
+  --color-slate-100: #111827;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #64748b;
+  --color-slate-500: #94a3b8;
+  --color-slate-600: #cbd5e1;
+  --color-slate-700: #e2e8f0;
+  --color-slate-800: #f1f5f9;
+  --color-slate-900: #f8fafc;
+  --color-slate-950: #ffffff;
+
+  --color-blue-50: #13233f;
+  --color-blue-100: #1a3259;
+  --color-blue-200: #23467a;
+  --color-emerald-50: #0c2418;
+  --color-emerald-100: #123322;
+  --color-emerald-200: #1a4a30;
+  --color-green-50: #0c2418;
+  --color-green-100: #123322;
+  --color-red-50: #3a1418;
+  --color-red-100: #4c1b20;
+  --color-red-200: #6b242c;
+  --color-amber-50: #3a2710;
+  --color-amber-100: #4c3414;
+  --color-amber-200: #6b4a1c;
+  --color-orange-50: #3a2014;
+  --color-orange-100: #4c2a1a;
+  --color-violet-50: #2a1848;
+  --color-violet-100: #3b2163;
+  --color-violet-200: #4c2d7a;
+  --color-purple-50: #2a1848;
+  --color-indigo-50: #1c1b4a;
+  --color-indigo-100: #25215f;
+  --color-sky-50: #0c2438;
+  --color-cyan-50: #0c2430;
+  --color-rose-50: #3a1418;
+  --color-pink-50: #3a1428;
+  --color-yellow-50: #3a3010;
+  --color-hero-from: rgba(124, 58, 237, 0.28);
+  --color-hero-via: #182038;
+  --color-hero-to: rgba(37, 99, 235, 0.16);
+  --color-hero-illustration-soft: #2a2458;
+  --color-hero-illustration-mid: #243056;
+  --color-hero-illustration-paper: #1e2a48;
+}
+
+html.dark :is(
+  [class~="bg-white"],
+  [class~="bg-white/90"],
+  [class~="bg-white/95"],
+  [class~="bg-white/88"],
+  [class~="bg-white/85"],
+  [class~="bg-white/80"],
+  [class~="bg-white/70"]
+) {
+  background-color: var(--color-card);
+}
+
+html.dark [class~="hover:bg-white"]:hover,
+html.dark [class~="focus:bg-white"]:focus {
+  background-color: var(--color-slate-100);
+}
+
+html.dark [class~="via-white"] {
+  --tw-gradient-via: var(--color-hero-via);
+  --tw-gradient-via-stops: var(--tw-gradient-position),
+    var(--tw-gradient-from) var(--tw-gradient-from-position),
+    var(--color-hero-via) var(--tw-gradient-via-position),
+    var(--tw-gradient-to) var(--tw-gradient-to-position);
+}
+
+html.dark [class~="to-white"] {
+  --tw-gradient-to: var(--color-hero-via);
 }
 
 * {
@@ -51,9 +145,8 @@ a {
 }
 
 /*
- * The app is pinned to color-scheme: light, which makes macOS paint a bright
- * scrollbar track over the dark sidebar. Scope a dark scheme plus a slim
- * translucent thumb to the nav so it reads as part of the panel.
+ * Keep the dark sidebar scrollbar looking like part of the nav instead of
+ * a bright system track.
  */
 .nav-scroll {
   color-scheme: dark;
