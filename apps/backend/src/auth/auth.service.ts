@@ -11,6 +11,8 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RolesPermissionsService } from '../roles-permissions/roles-permissions.service';
 import { DeviceInfoService } from './device-info.service';
+import { ActivityService } from '../activity/activity.service';
+import { UserActivityKind, UserActivityStatus } from '@prisma/client';
 
 type RequestMeta = {
   headers: Record<string, string | string[] | undefined>;
@@ -24,6 +26,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly rolesPermissionsService: RolesPermissionsService,
     private readonly deviceInfoService: DeviceInfoService,
+    private readonly activityService: ActivityService,
   ) {}
 
   async login(body: Record<string, unknown>, requestMeta: RequestMeta) {
@@ -41,6 +44,10 @@ export class AuthService {
     const passwordMatches = await bcrypt.compare(password, user.password);
 
     if (!passwordMatches) {
+      void this.activityService.recordKind(user.id, UserActivityKind.FAILED_LOGIN, {
+        status: UserActivityStatus.FAILED,
+        device: this.readDevicePayload(body, requestMeta),
+      });
       throw new UnauthorizedException('Invalid email or password.');
     }
 
@@ -69,6 +76,16 @@ export class AuthService {
     });
 
     const session = await this.captureSession(updatedUser.id, body, requestMeta);
+    void this.activityService.recordKind(updatedUser.id, UserActivityKind.LOGIN, {
+      device: {
+        deviceName: session.deviceName,
+        deviceType: session.deviceType,
+        browser: session.browser,
+        os: session.os,
+        ipAddress: session.ipAddress,
+        location: session.location,
+      },
+    });
 
     const payload = {
       sub: updatedUser.id,
@@ -158,6 +175,18 @@ export class AuthService {
       where: { id: session.id },
       data: { revokedAt: new Date() },
     });
+    void this.activityService.recordKind(userId, UserActivityKind.DEVICE, {
+      title: 'Signed Out a Device',
+      description: `${session.deviceName} was signed out`,
+      device: {
+        deviceName: session.deviceName,
+        deviceType: session.deviceType,
+        browser: session.browser,
+        os: session.os,
+        ipAddress: session.ipAddress,
+        location: session.location,
+      },
+    });
 
     return { ok: true };
   }
@@ -174,6 +203,10 @@ export class AuthService {
       },
       data: { revokedAt: new Date() },
     });
+    void this.activityService.recordKind(userId, UserActivityKind.DEVICE, {
+      title: 'Other Devices Signed Out',
+      description: 'All other signed-in devices were signed out',
+    });
 
     return { ok: true };
   }
@@ -184,12 +217,38 @@ export class AuthService {
       typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
 
     if (sessionId) {
+      const session = await this.prisma.userSession.findFirst({
+        where: { id: sessionId, userId, revokedAt: null },
+      });
       await this.prisma.userSession.updateMany({
         where: { id: sessionId, userId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+      void this.activityService.recordKind(userId, UserActivityKind.LOGOUT, {
+        device: session
+          ? {
+              deviceName: session.deviceName,
+              deviceType: session.deviceType,
+              browser: session.browser,
+              os: session.os,
+              ipAddress: session.ipAddress,
+              location: session.location,
+            }
+          : undefined,
+      });
     }
 
+    return { ok: true };
+  }
+
+  async listActivity(query: Record<string, string | undefined>) {
+    const userId = this.readRequiredField(query.userId, 'userId');
+    return this.activityService.listForUser(userId);
+  }
+
+  async recordExport(body: Record<string, unknown>) {
+    const userId = this.readRequiredField(body.userId, 'userId');
+    await this.activityService.recordKind(userId, UserActivityKind.EXPORT);
     return { ok: true };
   }
 

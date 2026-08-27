@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AssessmentsModule } from './assessments/assessments.module';
+import { ActivityModule } from './activity/activity.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { DepartmentsModule } from './departments/departments.module';
@@ -17,6 +18,7 @@ import { UsersModule } from './users/users.module';
   imports: [
     PrismaModule,
     StorageModule,
+    ActivityModule,
     UsersModule,
     AuthModule,
     RolesPermissionsModule,

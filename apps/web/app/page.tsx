@@ -22,19 +22,19 @@ import { collectDeviceClientInfo } from "../lib/device-info";
 const testAccounts = [
   {
     label: "Admin",
-    email: "admin@rbitogon.com",
+    email: "admin@hinora.com",
     password: "admin123",
     Icon: UserCog,
   },
   {
     label: "Employee",
-    email: "employee@rbitogon.com",
+    email: "employee@hinora.com",
     password: "employe123",
     Icon: UserRound,
   },
   {
     label: "Manager",
-    email: "maria.santos@rbitogon.com",
+    email: "maria.santos@hinora.com",
     password: "TempPass123!",
     Icon: UserRound,
   },
@@ -321,12 +321,12 @@ export default function Home() {
         <div className="absolute -bottom-16 right-[-5%] h-64 w-[72%] rounded-[100%] border border-white/10" />
         <div className="relative z-10 flex w-full flex-col items-center justify-center px-12 py-16 text-center">
           <div className="flex h-36 w-36 items-center justify-center rounded-[32px] border-4 border-white/85 bg-white/95 shadow-[0_30px_70px_rgba(2,12,45,0.28)]">
-            <div className="relative h-1000 w-1000">
+            <div className="relative h-24 w-24">
               <Image
-                src="/branding/rbi-colored.png"
-                alt="RBI Logo"
+                src="/branding/hinora-logo-icon.png"
+                alt="Rural Bank of Hinora"
                 fill
-                sizes="80px"
+                sizes="96px"
                 className="object-contain"
                 priority
               />
@@ -335,9 +335,8 @@ export default function Home() {
 
           <div className="mt-7">
             <p className="text-lg tracking-[0.35em] text-white/90">RURAL BANK OF</p>
-            <h2 className="mt-2 text-7xl font-semibold tracking-wide text-white">ITOGON</h2>
-            <p className="mt-2 text-3xl tracking-[0.18em] text-white/90">(BENGUET), INC.</p>
-            <p className="mt-6 text-xl text-amber-300">Empowering Lives since 1978!</p>
+            <h2 className="mt-2 text-7xl font-semibold tracking-wide text-white">HINORA</h2>
+            <p className="mt-6 text-xl text-amber-300">AI-powered policy compliance</p>
           </div>
 
           <div className="mt-8 h-px w-full max-w-[420px] bg-white/20" />

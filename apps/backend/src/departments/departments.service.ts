@@ -252,7 +252,7 @@ export class DepartmentsService {
         }
       : {
           name: 'Unassigned',
-          email: 'unassigned@company.com',
+          email: 'unassigned@hinora.com',
           initials: 'UA',
         };
 

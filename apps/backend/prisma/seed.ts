@@ -209,7 +209,7 @@ const seedLocations = [
     city: 'La Trinidad',
     province: 'Benguet',
     postalCode: '2601',
-    email: 'headoffice@rbitogon.com',
+    email: 'headoffice@hinora.com',
     phone: '+63 74 422 1000',
     description:
       'Primary corporate headquarters for company-wide operations and governance.',
@@ -222,7 +222,7 @@ const seedLocations = [
     city: 'Baguio City',
     province: 'Benguet',
     postalCode: '2600',
-    email: 'baguio@rbitogon.com',
+    email: 'baguio@hinora.com',
     phone: '+63 74 442 2200',
     description:
       'Northern Luzon regional office supporting local operations and client services.',
@@ -235,7 +235,7 @@ const seedLocations = [
     city: 'La Trinidad',
     province: 'Benguet',
     postalCode: '2601',
-    email: 'latrinidad@rbitogon.com',
+    email: 'latrinidad@hinora.com',
     phone: '+63 74 422 3300',
     description:
       'Satellite office currently under facility maintenance and staffing adjustments.',
@@ -287,8 +287,8 @@ const seedDepartments = [
 
 const seedUsers = [
   {
-    email: 'admin@rbitogon.com',
-    username: 'admin.rbitogon',
+    email: 'admin@hinora.com',
+    username: 'admin.hinora',
     password: 'admin123',
     firstName: 'Admin',
     lastName: 'User',
@@ -305,7 +305,7 @@ const seedUsers = [
     lastLoginAt: new Date('2024-05-13T10:24:00Z'),
   },
   {
-    email: 'employee@rbitogon.com',
+    email: 'employee@hinora.com',
     username: 'john.delacruz',
     password: 'employe123',
     firstName: 'John',
@@ -323,7 +323,7 @@ const seedUsers = [
     lastLoginAt: new Date('2024-05-13T09:15:00Z'),
   },
   {
-    email: 'maria.santos@rbitogon.com',
+    email: 'maria.santos@hinora.com',
     username: 'maria.santos',
     password: 'TempPass123!',
     firstName: 'Maria',
@@ -341,7 +341,7 @@ const seedUsers = [
     lastLoginAt: new Date('2024-05-13T09:15:00Z'),
   },
   {
-    email: 'anna.reyes@rbitogon.com',
+    email: 'anna.reyes@hinora.com',
     username: 'anna.reyes',
     password: 'TempPass123!',
     firstName: 'Anna',
@@ -359,7 +359,7 @@ const seedUsers = [
     lastLoginAt: new Date('2024-04-28T11:20:00Z'),
   },
   {
-    email: 'michael.cruz@rbitogon.com',
+    email: 'michael.cruz@hinora.com',
     username: 'michael.cruz',
     password: 'TempPass123!',
     firstName: 'Michael',
@@ -701,11 +701,11 @@ async function main() {
 
   const headOfficeId = locationsByCode.get('HO');
   const baguioId = locationsByCode.get('BAG');
-  const adminId = usersByEmail.get('admin@rbitogon.com');
-  const johnId = usersByEmail.get('employee@rbitogon.com');
-  const mariaId = usersByEmail.get('maria.santos@rbitogon.com');
-  const annaId = usersByEmail.get('anna.reyes@rbitogon.com');
-  const michaelId = usersByEmail.get('michael.cruz@rbitogon.com');
+  const adminId = usersByEmail.get('admin@hinora.com');
+  const johnId = usersByEmail.get('employee@hinora.com');
+  const mariaId = usersByEmail.get('maria.santos@hinora.com');
+  const annaId = usersByEmail.get('anna.reyes@hinora.com');
+  const michaelId = usersByEmail.get('michael.cruz@hinora.com');
 
   if (johnId && adminId) {
     await prisma.user.update({

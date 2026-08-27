@@ -487,7 +487,7 @@ export default function LocationFormModal({
                   type="email"
                   value={values.email}
                   onChange={(event) => update("email", event.target.value)}
-                  placeholder="location@company.com"
+                  placeholder="location@hinora.com"
                   className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-[var(--color-active-menu)] focus:ring-4 focus:ring-blue-100"
                 />
               </label>

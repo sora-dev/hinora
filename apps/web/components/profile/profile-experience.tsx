@@ -49,6 +49,11 @@ import { ModuleGuide } from "../dashboard/module-guide";
 import { getHinoraSession, patchHinoraSession } from "../dashboard/session";
 import type { NavVariant } from "../dashboard/navigation";
 import { DropdownSelect } from "../ui/dropdown-select";
+import {
+  ProfileActivityPanel,
+  ProfileActivitySidebar,
+  useAccountActivity,
+} from "./profile-activity";
 import { getApiBaseUrl } from "../../lib/api-base-url";
 import { collectDeviceClientInfo } from "../../lib/device-info";
 import { useTheme } from "../theme/theme-provider";
@@ -328,26 +333,6 @@ function statusLabel(status: string) {
   return "Inactive";
 }
 
-function PlaceholderPanel({
-  title,
-  description,
-  Icon,
-}: {
-  title: string;
-  description: string;
-  Icon: typeof Shield;
-}) {
-  return (
-    <section className="rounded-[20px] border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-[var(--color-active-menu)]">
-        <Icon className="h-6 w-6" />
-      </div>
-      <h2 className="mt-4 text-lg font-bold text-slate-900">{title}</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{description}</p>
-    </section>
-  );
-}
-
 function PasswordField({
   label,
   value,
@@ -471,7 +456,7 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
   const [profileRole, setProfileRole] = useState(
     variant === "admin" ? "System Administrator" : "Employee",
   );
-  const [profileEmail, setProfileEmail] = useState("juan.delacruz@ruralbank.com.ph");
+  const [profileEmail, setProfileEmail] = useState("juan.delacruz@hinora.com");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -482,6 +467,8 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [profileMessage, setProfileMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null,
   );
@@ -491,6 +478,7 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionActionId, setSessionActionId] = useState<string | null>(null);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+  const activityState = useAccountActivity(activeTab === "activity");
   const [profileForm, setProfileForm] = useState({
     firstName: "",
     lastName: "",
@@ -819,6 +807,57 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
       });
     } finally {
       setIsSavingProfile(false);
+    }
+  }
+
+  async function updatePassword() {
+    const session = getHinoraSession();
+    const userId = session?.userId?.trim() ?? profileUser?.id;
+    if (!userId) {
+      setPasswordMessage({ type: "error", text: "You need to sign in again to change your password." });
+      return;
+    }
+    if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+      setPasswordMessage({ type: "error", text: "Enter your current password and a new password." });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage({ type: "error", text: "New password and confirmation do not match." });
+      return;
+    }
+    if (evaluatePassword(newPassword).some((requirement) => !requirement.met)) {
+      setPasswordMessage({ type: "error", text: "New password does not meet the security requirements." });
+      return;
+    }
+
+    setIsSavingPassword(true);
+    setPasswordMessage(null);
+    try {
+      const apiBaseUrl = getApiBaseUrl();
+      const response = await fetch(`${apiBaseUrl}/users/${userId}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword,
+          password: newPassword,
+          mustChangePassword: false,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to update password.");
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordMessage({ type: "success", text: "Password updated successfully." });
+    } catch (error: unknown) {
+      setPasswordMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "Unable to update password.",
+      });
+    } finally {
+      setIsSavingPassword(false);
     }
   }
 
@@ -1182,13 +1221,28 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
                     </div>
                   </div>
 
+                  {passwordMessage ? (
+                    <div
+                      className={cx(
+                        "mt-4 rounded-xl border px-4 py-3 text-sm font-medium",
+                        passwordMessage.type === "success"
+                          ? "border-emerald-200 bg-emerald-50 text-[var(--color-success)]"
+                          : "border-red-200 bg-red-50 text-[var(--color-error)]",
+                      )}
+                    >
+                      {passwordMessage.text}
+                    </div>
+                  ) : null}
+
                   <div className="mt-5 flex justify-end">
                     <button
                       type="button"
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white"
+                      onClick={() => void updatePassword()}
+                      disabled={isSavingPassword}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white disabled:opacity-60"
                     >
                       <Lock className="h-4 w-4" />
-                      <span>Update Password</span>
+                      <span>{isSavingPassword ? "Updating..." : "Update Password"}</span>
                     </button>
                   </div>
                 </section>
@@ -1291,7 +1345,7 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-bold text-slate-900">Recovery Email</div>
                         <div className="mt-0.5 truncate text-sm text-slate-500">
-                          juan.recovery@email.com
+                          juan.recovery@hinora.com
                         </div>
                       </div>
                       <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[0.7rem] font-bold text-[var(--color-success)]">
@@ -1713,13 +1767,7 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
               </div>
             ) : null}
 
-            {activeTab === "activity" ? (
-              <PlaceholderPanel
-                Icon={Activity}
-                title="Activity"
-                description="Recent account activity, logins, and profile changes will show up in this tab."
-              />
-            ) : null}
+            {activeTab === "activity" ? <ProfileActivityPanel {...activityState} /> : null}
           </div>
 
           <aside className="space-y-4">
@@ -1952,7 +2000,29 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
               </>
             ) : null}
 
-            {activeTab !== "security" && activeTab !== "devices" && activeTab !== "preferences" ? (
+            {activeTab === "activity" ? (
+              <ProfileActivitySidebar
+                activities={activityState.activities}
+                devices={[currentSession, ...otherSessions]
+                  .filter((session): session is SessionRecord => Boolean(session))
+                  .map((session) => ({
+                    id: session.id,
+                    deviceName: session.deviceName,
+                    deviceType: session.deviceType,
+                    browser: session.browser,
+                    os: session.os,
+                    location: session.location,
+                    isCurrent: session.isCurrent,
+                  }))}
+                onViewDevices={() => setActiveTab("devices")}
+                onOpenSecurity={() => setActiveTab("security")}
+              />
+            ) : null}
+
+            {activeTab !== "security" &&
+            activeTab !== "devices" &&
+            activeTab !== "preferences" &&
+            activeTab !== "activity" ? (
               <>
                 <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
                   <div className="flex flex-col items-center text-center">

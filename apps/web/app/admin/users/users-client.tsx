@@ -1827,7 +1827,7 @@ function UserAccountForm({
               value={formState.email}
               onChange={(event) => onChange("email", event.target.value)}
               className={inputClassName}
-              placeholder="e.g. juan.delacruz@ruralbank.com.ph"
+              placeholder="e.g. juan.delacruz@hinora.com"
             />
           </FormField>
           <FormField label="Phone Number">

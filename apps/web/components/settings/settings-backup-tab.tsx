@@ -18,7 +18,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { DropdownSelect } from "../ui/dropdown-select";
+import BackupExportPanel from "./settings-backup-export";
 import BackupHistoryPanel, {
   createInitialBackups,
   createManualBackup,
@@ -26,6 +26,7 @@ import BackupHistoryPanel, {
   type BackupType,
 } from "./settings-backup-history";
 import BackupRestorePanel from "./settings-backup-restore";
+import BackupRetentionPanel from "./settings-backup-retention";
 import BackupSchedulePanel from "./settings-backup-schedule";
 
 type BackupSubTab =
@@ -53,12 +54,6 @@ type StorageSettings = {
   secondaryRegion: string;
 };
 
-type RetentionSettings = {
-  days: string;
-  keepFullWeekly: boolean;
-  keepMonthly: boolean;
-};
-
 const subTabs: Array<{ id: BackupSubTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "history", label: "Backup History" },
@@ -76,8 +71,8 @@ const tabDescriptions: Record<BackupSubTab, string> = {
   history: "View and manage all system backup records. You can download, verify, or delete backups.",
   restore: "Restore your system data from a previous backup. Please review the backup details before proceeding.",
   schedule: "Manage system backups, configure backup schedules, and restore data when needed.",
-  retention: "Control how long restore points are kept before they are removed.",
-  export: "Download a copy of Hinora data for offline storage or migration.",
+  retention: "Configure how long backups are kept before they are automatically deleted.",
+  export: "Export system data for offline storage, migration, or analysis.",
 };
 
 const defaultSchedule: ScheduleSettings = {
@@ -95,12 +90,6 @@ const defaultStorage: StorageSettings = {
   primaryRegion: "singapore",
   secondary: "s3",
   secondaryRegion: "ap-southeast-1",
-};
-
-const defaultRetention: RetentionSettings = {
-  days: "30",
-  keepFullWeekly: true,
-  keepMonthly: true,
 };
 
 const frequencyOptions = [
@@ -126,19 +115,6 @@ const backupTypeOptions = [
   { value: "full", label: "Full only" },
   { value: "incremental", label: "Incremental only" },
   { value: "full-incremental", label: "Full + Incremental" },
-];
-
-const retentionOptions = [
-  { value: "7", label: "7 days" },
-  { value: "14", label: "14 days" },
-  { value: "30", label: "30 days" },
-  { value: "90", label: "90 days" },
-];
-
-const exportFormatOptions = [
-  { value: "sql", label: "SQL dump" },
-  { value: "json", label: "JSON archive" },
-  { value: "zip", label: "ZIP package" },
 ];
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -326,8 +302,6 @@ export default function SettingsBackupTab() {
   const [loadedMore, setLoadedMore] = useState(false);
   const [schedule, setSchedule] = useState(defaultSchedule);
   const [storage, setStorage] = useState(defaultStorage);
-  const [retention, setRetention] = useState(defaultRetention);
-  const [exportFormat, setExportFormat] = useState("zip");
   const [isRunningBackup, setIsRunningBackup] = useState(false);
 
   const includeLabel = useMemo(() => {
@@ -577,73 +551,9 @@ export default function SettingsBackupTab() {
 
       {subTab === "schedule" ? <BackupSchedulePanel onBanner={setBanner} /> : null}
 
-      {subTab === "retention" ? (
-        <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-6">
-          <h3 className="text-base font-bold text-slate-900">Retention Policy</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            How long Hinora keeps restore points before they are removed.
-          </p>
-          <div className="mt-5 max-w-md">
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Keep backups for</label>
-            <DropdownSelect
-              value={retention.days}
-              onChange={(value) => setRetention((current) => ({ ...current, days: value || "30" }))}
-              options={retentionOptions}
-              aria-label="Keep backups for"
-            />
-          </div>
-          <div className="mt-4 space-y-2">
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <input
-                type="checkbox"
-                checked={retention.keepFullWeekly}
-                onChange={(event) =>
-                  setRetention((current) => ({ ...current, keepFullWeekly: event.target.checked }))
-                }
-                className="h-4 w-4 rounded border-slate-300 accent-[var(--color-active-menu)]"
-              />
-              Keep one full backup each week
-            </label>
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <input
-                type="checkbox"
-                checked={retention.keepMonthly}
-                onChange={(event) =>
-                  setRetention((current) => ({ ...current, keepMonthly: event.target.checked }))
-                }
-                className="h-4 w-4 rounded border-slate-300 accent-[var(--color-active-menu)]"
-              />
-              Keep one full backup each month
-            </label>
-          </div>
-        </section>
-      ) : null}
+      {subTab === "retention" ? <BackupRetentionPanel onBanner={setBanner} /> : null}
 
-      {subTab === "export" ? (
-        <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-6">
-          <h3 className="text-base font-bold text-slate-900">Export Data</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            Download a copy of Hinora data. This mockup does not generate a real file.
-          </p>
-          <div className="mt-5 max-w-md">
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Export format</label>
-            <DropdownSelect
-              value={exportFormat}
-              onChange={(value) => setExportFormat(value || "zip")}
-              options={exportFormatOptions}
-              aria-label="Export format"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => setBanner("Export prepared. Download will be available in a later pass.")}
-            className="mt-5 inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white"
-          >
-            <Download className="h-4 w-4" />
-            Prepare export
-          </button>
-        </section>
-      ) : null}
+      {subTab === "export" ? <BackupExportPanel onBanner={setBanner} /> : null}
     </div>
   );
 }

@@ -228,7 +228,7 @@ const MOCK_EMPLOYEES: EmployeeRow[] = [
   {
     id: "e1",
     name: "Maria Santos",
-    email: "maria.santos@rbitogon.com",
+    email: "maria.santos@hinora.com",
     initials: "MS",
     avatarClassName: "bg-blue-100 text-[var(--color-active-menu)]",
     department: "Operations",
@@ -244,7 +244,7 @@ const MOCK_EMPLOYEES: EmployeeRow[] = [
   {
     id: "e2",
     name: "Juan Dela Cruz",
-    email: "juan.delacruz@rbitogon.com",
+    email: "juan.delacruz@hinora.com",
     initials: "JD",
     avatarClassName: "bg-violet-100 text-[var(--color-ai-accent)]",
     department: "IT Department",
@@ -260,7 +260,7 @@ const MOCK_EMPLOYEES: EmployeeRow[] = [
   {
     id: "e3",
     name: "Ana Reyes",
-    email: "ana.reyes@rbitogon.com",
+    email: "ana.reyes@hinora.com",
     initials: "AR",
     avatarClassName: "bg-emerald-100 text-[var(--color-success)]",
     department: "Finance",
@@ -276,7 +276,7 @@ const MOCK_EMPLOYEES: EmployeeRow[] = [
   {
     id: "e4",
     name: "Carlo Mendoza",
-    email: "carlo.mendoza@rbitogon.com",
+    email: "carlo.mendoza@hinora.com",
     initials: "CM",
     avatarClassName: "bg-amber-100 text-[var(--color-warning)]",
     department: "Human Resources",
@@ -292,7 +292,7 @@ const MOCK_EMPLOYEES: EmployeeRow[] = [
   {
     id: "e5",
     name: "Liza Garcia",
-    email: "liza.garcia@rbitogon.com",
+    email: "liza.garcia@hinora.com",
     initials: "LG",
     avatarClassName: "bg-rose-100 text-rose-600",
     department: "Compliance",
@@ -308,7 +308,7 @@ const MOCK_EMPLOYEES: EmployeeRow[] = [
   {
     id: "e6",
     name: "Mark Villanueva",
-    email: "mark.villanueva@rbitogon.com",
+    email: "mark.villanueva@hinora.com",
     initials: "MV",
     avatarClassName: "bg-cyan-100 text-cyan-700",
     department: "Operations",
@@ -324,7 +324,7 @@ const MOCK_EMPLOYEES: EmployeeRow[] = [
   {
     id: "e7",
     name: "Sofia Ramos",
-    email: "sofia.ramos@rbitogon.com",
+    email: "sofia.ramos@hinora.com",
     initials: "SR",
     avatarClassName: "bg-slate-100 text-slate-600",
     department: "Legal",
@@ -1277,7 +1277,7 @@ const MOCK_CERTIFICATES: CertificateRow[] = [
   {
     id: "c1",
     name: "Maria Santos",
-    email: "maria.santos@rbitogon.com",
+    email: "maria.santos@hinora.com",
     initials: "MS",
     avatarClassName: "bg-blue-100 text-[var(--color-active-menu)]",
     department: "Operations",
@@ -1291,7 +1291,7 @@ const MOCK_CERTIFICATES: CertificateRow[] = [
   {
     id: "c2",
     name: "Juan Dela Cruz",
-    email: "juan.delacruz@rbitogon.com",
+    email: "juan.delacruz@hinora.com",
     initials: "JD",
     avatarClassName: "bg-violet-100 text-[var(--color-ai-accent)]",
     department: "IT Department",
@@ -1305,7 +1305,7 @@ const MOCK_CERTIFICATES: CertificateRow[] = [
   {
     id: "c3",
     name: "Mark Villanueva",
-    email: "mark.villanueva@rbitogon.com",
+    email: "mark.villanueva@hinora.com",
     initials: "MV",
     avatarClassName: "bg-cyan-100 text-cyan-700",
     department: "Operations",
@@ -1319,7 +1319,7 @@ const MOCK_CERTIFICATES: CertificateRow[] = [
   {
     id: "c4",
     name: "Liza Garcia",
-    email: "liza.garcia@rbitogon.com",
+    email: "liza.garcia@hinora.com",
     initials: "LG",
     avatarClassName: "bg-rose-100 text-rose-600",
     department: "Compliance",
@@ -1333,7 +1333,7 @@ const MOCK_CERTIFICATES: CertificateRow[] = [
   {
     id: "c5",
     name: "Ana Reyes",
-    email: "ana.reyes@rbitogon.com",
+    email: "ana.reyes@hinora.com",
     initials: "AR",
     avatarClassName: "bg-emerald-100 text-[var(--color-success)]",
     department: "Finance",
@@ -1347,7 +1347,7 @@ const MOCK_CERTIFICATES: CertificateRow[] = [
   {
     id: "c6",
     name: "Katrina Lee",
-    email: "katrina.lee@rbitogon.com",
+    email: "katrina.lee@hinora.com",
     initials: "KL",
     avatarClassName: "bg-amber-100 text-[var(--color-warning)]",
     department: "Human Resources",
@@ -1361,7 +1361,7 @@ const MOCK_CERTIFICATES: CertificateRow[] = [
   {
     id: "c7",
     name: "Sofia Ramos",
-    email: "sofia.ramos@rbitogon.com",
+    email: "sofia.ramos@hinora.com",
     initials: "SR",
     avatarClassName: "bg-slate-100 text-slate-600",
     department: "Legal",

@@ -19,6 +19,16 @@ export class AuthController {
     return this.authService.login(body, this.toRequestMeta(request));
   }
 
+  @Get('activity')
+  listActivity(@Query() query: Record<string, string | undefined>) {
+    return this.authService.listActivity(query);
+  }
+
+  @Post('activity/export')
+  recordExport(@Body() body: Record<string, unknown>) {
+    return this.authService.recordExport(body);
+  }
+
   @Get('sessions')
   listSessions(@Query() query: Record<string, string | undefined>) {
     return this.authService.listSessions(query);

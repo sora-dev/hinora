@@ -20,6 +20,21 @@ enum UserStatus {
   LOCKED
 }
 
+enum UserActivityKind {
+  LOGIN
+  FAILED_LOGIN
+  LOGOUT
+  PASSWORD
+  PROFILE
+  DEVICE
+  EXPORT
+}
+
+enum UserActivityStatus {
+  SUCCESS
+  FAILED
+}
+
 enum RoleDefinitionType {
   SYSTEM
   CUSTOM
@@ -123,6 +138,7 @@ model User {
   testResults         TestResult[]
   readingProgress     PolicyReadingProgress[]
   sessions            UserSession[]
+  activities          UserActivity[]
 }
 
 model UserSession {
@@ -145,6 +161,27 @@ model UserSession {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
+}
+
+model UserActivity {
+  id          String             @id @default(uuid())
+  userId      String
+  kind        UserActivityKind
+  title       String
+  description String
+  status      UserActivityStatus @default(SUCCESS)
+  deviceName  String             @default("")
+  deviceType  String             @default("desktop")
+  browser     String             @default("")
+  os          String             @default("")
+  ipAddress   String             @default("")
+  location    String             @default("")
+  extra       String             @default("")
+  createdAt   DateTime           @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model Location {

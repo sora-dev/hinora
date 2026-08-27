@@ -46,9 +46,9 @@ const tabs: Array<{ id: SettingsTab; label: string; Icon: LucideIcon }> = [
 ];
 
 const defaultGeneralSettings: GeneralSettings = {
-  organizationName: "Rural Bank of Itogon, Inc.",
-  organizationCode: "RBI",
-  logoUrl: null,
+  organizationName: "Rural Bank of Hinora",
+  organizationCode: "RBH",
+  logoUrl: "/branding/hinora-logo-icon.png",
   timeZone: "asia-manila",
   dateFormat: "mm-dd-yyyy",
   timeFormat: "12h",
@@ -479,7 +479,7 @@ export default function SettingsExperience() {
               { label: "Maintenance mode", value: "Off" },
               { label: "Hinora AI assistant", value: "Enabled" },
               { label: "AI policy analysis", value: "Enabled" },
-              { label: "System email sender", value: "noreply@hinora.app" },
+              { label: "System email sender", value: "noreply@hinora.com" },
               { label: "Audit log retention", value: "24 months" },
               { label: "Environment", value: "Production" },
             ]}

@@ -6,7 +6,9 @@ import {
 import { Prisma, Role, UserStatus, type User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityService } from '../activity/activity.service';
 import { RolesPermissionsService } from '../roles-permissions/roles-permissions.service';
+import { UserActivityKind } from '@prisma/client';
 
 type ListUsersQuery = Record<string, string | undefined>;
 type CreateUserInput = {
@@ -65,6 +67,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rolesPermissionsService: RolesPermissionsService,
+    private readonly activityService: ActivityService,
   ) {}
 
   async listUsers(query: ListUsersQuery) {
@@ -273,6 +276,18 @@ export class UsersService {
         include: userInclude,
       });
 
+      const profileFields: Array<keyof UpdateUserInput> = [
+        'firstName',
+        'lastName',
+        'preferredName',
+        'phone',
+        'email',
+        'jobTitle',
+      ];
+      if (profileFields.some((field) => field in input)) {
+        void this.activityService.recordKind(id, UserActivityKind.PROFILE);
+      }
+
       return this.toUserResponse(user);
     } catch (error: unknown) {
       this.handlePrismaError(error);
@@ -293,7 +308,18 @@ export class UsersService {
   }
 
   async updatePassword(id: string, body: Record<string, unknown>) {
-    await this.ensureUserExists(id);
+    const existing = await this.prisma.user.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`User ${id} was not found.`);
+    }
+
+    if (typeof body.currentPassword === 'string' && body.currentPassword.trim()) {
+      const matches = await bcrypt.compare(body.currentPassword, existing.password);
+      if (!matches) {
+        throw new BadRequestException('Current password is incorrect.');
+      }
+    }
+
     const password = this.readSecurePassword(body.password, 'password');
     const mustChangePassword =
       typeof body.mustChangePassword === 'boolean'
@@ -320,6 +346,7 @@ export class UsersService {
       include: userInclude,
     });
 
+    await this.activityService.recordKind(id, UserActivityKind.PASSWORD);
     return this.toUserResponse(user);
   }
 

@@ -1,16 +1,11 @@
 import type { Metadata } from "next";
-import ComingSoon from "../../../components/dashboard/coming-soon";
+import ReportsExperience from "../../../components/reports/reports-experience";
 
 export const metadata: Metadata = {
   title: "Hinora | Reports",
-  description: "Compliance reporting for the Hinora AI Policy System",
+  description: "Generate insights and analytics from your Hinora policy library",
 };
 
 export default function AdminReportsPage() {
-  return (
-    <ComingSoon
-      variant="admin"
-      description="Compliance reporting across policies, departments, locations, and assessment results, ready for regulator review."
-    />
-  );
+  return <ReportsExperience />;
 }
