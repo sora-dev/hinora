@@ -103,6 +103,41 @@ enum DepartmentStatus {
   INACTIVE
 }
 
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  FAILED_LOGIN
+}
+
+enum AuditEventStatus {
+  SUCCESS
+  FAILED
+}
+
+enum PolicyAssignmentStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum PolicyAssignmentScope {
+  ORGANIZATION
+  DEPARTMENT
+  LOCATION
+  ROLE
+  USER
+}
+
+enum PolicyAssignmentPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model User {
   id          String     @id @default(uuid())
   email       String     @unique
@@ -136,9 +171,15 @@ model User {
   headedDepartments   Department[] @relation("DepartmentHead")
   certificates        Certificate[]
   testResults         TestResult[]
+  assessmentDrafts    AssessmentDraft[]
   readingProgress     PolicyReadingProgress[]
   sessions            UserSession[]
   activities          UserActivity[]
+  auditLogs           AuditLog[]
+  policyAssignments   PolicyAssignment[]
+  notificationMessages NotificationMessage[]
+  bookmarkCollections BookmarkCollection[]
+  policyBookmarks     PolicyBookmark[]
 }
 
 model UserSession {
@@ -313,7 +354,14 @@ model Policy {
   assessment       Assessment?
   testResults      TestResult[]
   certificates     Certificate[]
+  assessmentDrafts AssessmentDraft[]
   readingProgress  PolicyReadingProgress[]
+  assignments      PolicyAssignment[]
+  notificationRules NotificationRule[]
+  notificationTemplates NotificationTemplate[]
+  notificationBatches NotificationBatch[]
+  notificationMessages NotificationMessage[]
+  bookmarks           PolicyBookmark[]
 }
 
 /// Per-user reading progress for a policy (Continue Reading + reader unlock).
@@ -335,6 +383,39 @@ model PolicyReadingProgress {
 
   @@unique([userId, policyId])
   @@index([userId, lastAccessedAt])
+}
+
+/// Named folders a user can file saved policies into.
+model BookmarkCollection {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookmarks PolicyBookmark[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+/// A policy the user saved for quick access.
+model PolicyBookmark {
+  id           String   @id @default(uuid())
+  userId       String
+  policyId     String
+  collectionId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy     Policy              @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  collection BookmarkCollection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, policyId])
+  @@index([userId, createdAt])
+  @@index([collectionId])
 }
 
 /// The acknowledgement assessment attached to a policy. One per policy.
@@ -416,6 +497,25 @@ model TestResult {
   policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
 }
 
+/// In-progress assessment answers for a user + policy. Cleared on submit.
+model AssessmentDraft {
+  id            String   @id @default(uuid())
+  userId        String
+  policyId      String
+  answers       Json     @default("{}")
+  bookmarks     String[] @default([])
+  questionIndex Int      @default(0)
+  startedAt     DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, policyId])
+  @@index([userId, updatedAt])
+}
+
 model Certificate {
   id        String   @id @default(uuid())
   userId    String
@@ -426,4 +526,224 @@ model Certificate {
   // Relations
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id           String           @id @default(uuid())
+  createdAt    DateTime         @default(now())
+  userId       String?
+  userName     String           @default("System")
+  userInitials String           @default("SY")
+  action       AuditAction
+  module       String
+  resourceType String
+  resource     String           @default("")
+  details      String           @default("")
+  ipAddress    String           @default("")
+  status       AuditEventStatus @default(SUCCESS)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([module, createdAt])
+  @@index([status, createdAt])
+}
+
+model PolicyAssignment {
+  id            String                    @id @default(uuid())
+  policyId      String
+  scopeKind     PolicyAssignmentScope
+  scopeTarget   String                    @default("")
+  scopeLabel    String
+  userIds       String[]                  @default([])
+  startAt       DateTime
+  dueAt         DateTime
+  status        PolicyAssignmentStatus    @default(ACTIVE)
+  priority      PolicyAssignmentPriority  @default(MEDIUM)
+  notes         String                    @default("")
+  internalNotes String                    @default("")
+  createdByUserId String?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
+  policy    Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([policyId, createdAt])
+  @@index([status, dueAt])
+  @@index([scopeKind, status])
+}
+
+enum ReportHistoryFormat {
+  CSV
+  PDF
+  XLS
+  VIEW
+}
+
+enum ReportHistoryStatus {
+  COMPLETED
+  FAILED
+}
+
+model ReportHistory {
+  id          String              @id @default(uuid())
+  reportId    String
+  name        String
+  generatedAt DateTime            @default(now())
+  generatedBy String
+  dateFrom    String
+  dateTo      String
+  format      ReportHistoryFormat
+  status      ReportHistoryStatus @default(COMPLETED)
+  rowCount    Int                 @default(0)
+  createdAt   DateTime            @default(now())
+
+  @@index([generatedAt])
+  @@index([reportId, generatedAt])
+}
+
+model OrganizationSettings {
+  id                  String   @id @default("default")
+  organizationName    String
+  organizationCode    String
+  organizationAddress String   @default("")
+  organizationPhone   String   @default("")
+  logoUrl             String?
+  timeZone            String
+  dateFormat          String
+  timeFormat          String
+  language            String
+  landingPage         String
+  policyVisibility    String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+enum NotificationAudience {
+  ALL
+  PENDING
+  OVERDUE
+  PENDING_OVERDUE
+  MANAGER
+  COMPLIANCE
+}
+
+enum NotificationTrigger {
+  DAYS_BEFORE_DUE
+  ON_DUE_DATE
+  DAYS_AFTER_DUE
+  EVERY_DAY_AFTER_DUE
+  MANUAL
+}
+
+enum NotificationBatchStatus {
+  DELIVERED
+  FAILED
+  PARTIAL
+}
+
+enum NotificationCategory {
+  ASSIGNMENT
+  COMPLIANCE
+  SYSTEM
+  UPDATES
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  policyId  String?
+  name      String
+  kind      String
+  isDefault Boolean  @default(false)
+  subject   String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policy Policy?            @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  rules  NotificationRule[]
+  batches NotificationBatch[]
+
+  @@index([kind])
+}
+
+model NotificationRule {
+  id          String               @id @default(uuid())
+  policyId    String
+  templateId  String?
+  name        String
+  trigger     NotificationTrigger
+  offsetDays  Int                  @default(0)
+  channels    String[]             @default([])
+  audience    NotificationAudience
+  enabled     Boolean              @default(true)
+  sortOrder   Int                  @default(0)
+  lastFiredAt DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  policy   Policy                @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  batches  NotificationBatch[]
+
+  @@index([policyId, enabled])
+}
+
+model NotificationBatch {
+  id             String                 @id @default(uuid())
+  policyId       String
+  ruleId         String?
+  templateId     String?
+  name           String
+  channels       String[]               @default([])
+  audience       String
+  status         NotificationBatchStatus @default(DELIVERED)
+  recipientCount Int                    @default(0)
+  deliveredCount Int                    @default(0)
+  failedCount    Int                    @default(0)
+  openedCount    Int                    @default(0)
+  createdByUserId String?
+  createdAt      DateTime               @default(now())
+
+  policy   Policy                @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  rule     NotificationRule?     @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  messages NotificationMessage[]
+
+  @@index([policyId, createdAt])
+}
+
+model NotificationMessage {
+  id           String               @id @default(uuid())
+  batchId      String?
+  userId       String
+  policyId     String?
+  channel      String               @default("inapp")
+  title        String
+  body         String
+  category     NotificationCategory @default(COMPLIANCE)
+  priority     NotificationPriority @default(MEDIUM)
+  readAt       DateTime?
+  snoozedUntil DateTime?
+  deletedAt    DateTime?
+  metadata     Json?
+  createdAt    DateTime             @default(now())
+
+  batch  NotificationBatch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  user   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy Policy?            @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt, deletedAt])
+  @@index([policyId, createdAt])
 }

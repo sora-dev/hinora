@@ -1,6 +1,7 @@
 "use client";
 
 import ProfileDropdown from "./profile-dropdown";
+import { useProfileAvatar } from "./use-profile-avatar";
 import { useSessionProfile } from "./use-session-profile";
 
 type SessionProfileDropdownProps = {
@@ -21,6 +22,7 @@ export default function SessionProfileDropdown({
     role: profileRole,
     avatarText,
   });
+  const avatarUrl = useProfileAvatar();
 
   return (
     <ProfileDropdown
@@ -28,6 +30,7 @@ export default function SessionProfileDropdown({
       profileRole={sessionProfile.role}
       avatarText={sessionProfile.avatarText}
       avatarClassName={avatarClassName}
+      avatarUrl={avatarUrl}
     />
   );
 }

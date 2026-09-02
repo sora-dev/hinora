@@ -25,6 +25,7 @@ type ProfileDropdownProps = {
   profileRole: string;
   avatarText: string;
   avatarClassName: string;
+  avatarUrl?: string | null;
 };
 
 type MenuItem = {
@@ -37,11 +38,42 @@ type MenuItem = {
 
 const sessionStorageKey = "hinora_session";
 
+function ProfileAvatar({
+  profileName,
+  avatarText,
+  avatarClassName,
+  avatarUrl,
+  sizeClassName,
+}: {
+  profileName: string;
+  avatarText: string;
+  avatarClassName: string;
+  avatarUrl?: string | null;
+  sizeClassName: string;
+}) {
+  if (avatarUrl) {
+    return (
+      <span className={`${sizeClassName} overflow-hidden rounded-full`}>
+        <img src={avatarUrl} alt={profileName} className="h-full w-full object-cover" />
+      </span>
+    );
+  }
+
+  return (
+    <div
+      className={`flex items-center justify-center rounded-full bg-gradient-to-br text-sm font-extrabold text-white ${sizeClassName} ${avatarClassName}`}
+    >
+      {avatarText}
+    </div>
+  );
+}
+
 export default function ProfileDropdown({
   profileName,
   profileRole,
   avatarText,
   avatarClassName,
+  avatarUrl,
 }: ProfileDropdownProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -117,11 +149,13 @@ export default function ProfileDropdown({
         aria-expanded={isOpen}
         aria-haspopup="menu"
       >
-        <div
-          className={`flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br text-sm font-extrabold text-white ${avatarClassName}`}
-        >
-          {avatarText}
-        </div>
+        <ProfileAvatar
+          profileName={profileName}
+          avatarText={avatarText}
+          avatarClassName={avatarClassName}
+          avatarUrl={avatarUrl}
+          sizeClassName="h-10 w-10 shrink-0"
+        />
         <div className="min-w-0 text-left">
           <div className="truncate text-[0.92rem] font-bold text-slate-900">{profileName}</div>
           <div className="truncate text-[0.8rem] text-slate-500">{profileRole}</div>
@@ -133,9 +167,18 @@ export default function ProfileDropdown({
 
       {isOpen ? (
         <div className="absolute right-0 top-[calc(100%+10px)] z-30 w-[320px] rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,var(--color-sidebar)_0%,var(--color-sidebar-end)_100%)] p-3 text-white shadow-[0_28px_60px_rgba(15,23,42,0.38)]">
-          <div className="px-3 pb-3">
-            <div className="text-sm font-bold text-white">{profileName}</div>
-            <div className="text-xs text-white/55">{profileRole}</div>
+          <div className="flex items-center gap-3 px-3 pb-3">
+            <ProfileAvatar
+              profileName={profileName}
+              avatarText={avatarText}
+              avatarClassName={avatarClassName}
+              avatarUrl={avatarUrl}
+              sizeClassName="h-10 w-10 shrink-0"
+            />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-white">{profileName}</div>
+              <div className="truncate text-xs text-white/55">{profileRole}</div>
+            </div>
           </div>
 
           <div className="space-y-1">

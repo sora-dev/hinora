@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { PolicyAnalysisService } from './policy-analysis.service';
 import { PolicyContentExtractorService } from './policy-content-extractor.service';
+import { PolicyAssignmentsService } from '../policy-assignments/policy-assignments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseStorageService } from '../storage/supabase-storage.service';
 
@@ -40,17 +42,59 @@ export class PoliciesService {
     private readonly policyContentExtractor: PolicyContentExtractorService,
     private readonly policyAnalysisService: PolicyAnalysisService,
     private readonly storage: SupabaseStorageService,
+    private readonly policyAssignments: PolicyAssignmentsService,
   ) {}
 
-  async listPolicies(query: ListPoliciesQuery) {
+  async listPolicies(query: ListPoliciesQuery, actorUserId?: string) {
     const page = this.parsePositiveInt(query.page, 1);
     const pageSize = this.parsePositiveInt(query.pageSize, 10);
     const search = this.normalizeOptionalString(query.search);
     const categoryId = this.normalizeOptionalString(query.categoryId);
     const status = this.parseOptionalPolicyStatus(query.status);
+    const assignedPolicyIds = await this.resolveAssignedPolicyIds(
+      query,
+      actorUserId,
+    );
+
+    if (assignedPolicyIds && assignedPolicyIds.length === 0) {
+      const categories = await this.prisma.category.findMany({
+        select: {
+          id: true,
+          name: true,
+          code: true,
+        },
+        orderBy: [{ name: 'asc' }],
+      });
+
+      return {
+        data: [],
+        stats: {
+          totalPolicies: 0,
+          publishedPolicies: 0,
+          draftPolicies: 0,
+          underReviewPolicies: 0,
+        },
+        categoryCounts: {} as Record<string, number>,
+        filters: {
+          categories,
+          statuses: Object.values(PolicyStatus),
+        },
+        pagination: {
+          page,
+          pageSize,
+          total: 0,
+          totalPages: 1,
+        },
+      };
+    }
+
+    const assignedWhere: Prisma.PolicyWhereInput = assignedPolicyIds
+      ? { id: { in: assignedPolicyIds } }
+      : {};
 
     const where: Prisma.PolicyWhereInput = {
       AND: [
+        assignedWhere,
         search
           ? {
               OR: [
@@ -71,7 +115,7 @@ export class PoliciesService {
       ],
     };
 
-    const [policies, total, allPolicies, categories] = await Promise.all([
+    const [policies, total, scopedPolicies, categories] = await Promise.all([
       this.prisma.policy.findMany({
         where,
         include: policyInclude,
@@ -80,7 +124,13 @@ export class PoliciesService {
         take: pageSize,
       }),
       this.prisma.policy.count({ where }),
-      this.prisma.policy.findMany(),
+      this.prisma.policy.findMany({
+        where: assignedWhere,
+        select: {
+          status: true,
+          categoryId: true,
+        },
+      }),
       this.prisma.category.findMany({
         select: {
           id: true,
@@ -91,20 +141,33 @@ export class PoliciesService {
       }),
     ]);
 
+    const categoryCounts = scopedPolicies.reduce<Record<string, number>>(
+      (counts, policy) => {
+        if (!policy.categoryId) {
+          return counts;
+        }
+
+        counts[policy.categoryId] = (counts[policy.categoryId] ?? 0) + 1;
+        return counts;
+      },
+      {},
+    );
+
     return {
       data: policies.map((policy) => this.toPolicyResponse(policy)),
       stats: {
-        totalPolicies: allPolicies.length,
-        publishedPolicies: allPolicies.filter(
+        totalPolicies: scopedPolicies.length,
+        publishedPolicies: scopedPolicies.filter(
           (policy) => policy.status === PolicyStatus.PUBLISHED,
         ).length,
-        draftPolicies: allPolicies.filter(
+        draftPolicies: scopedPolicies.filter(
           (policy) => policy.status === PolicyStatus.DRAFT,
         ).length,
-        underReviewPolicies: allPolicies.filter(
+        underReviewPolicies: scopedPolicies.filter(
           (policy) => policy.status === PolicyStatus.UNDER_REVIEW,
         ).length,
       },
+      categoryCounts,
       filters: {
         categories,
         statuses: Object.values(PolicyStatus),
@@ -182,7 +245,103 @@ export class PoliciesService {
     }
   }
 
-  async getPolicyFile(id: string) {
+  async updatePolicy(
+    id: string,
+    file: Express.Multer.File | undefined,
+    body: Record<string, unknown>,
+  ) {
+    const existing = await this.findPolicyById(id);
+
+    if (!existing) {
+      throw new NotFoundException(`Policy ${id} was not found.`);
+    }
+
+    if (file && !file.buffer?.length) {
+      throw new BadRequestException(
+        'file buffer is missing. Policy uploads must use memory storage.',
+      );
+    }
+
+    const title = this.readRequiredString(body.title, 'title');
+    const description = this.normalizeOptionalString(body.description);
+    const categoryId = this.readRequiredString(body.categoryId, 'categoryId');
+    const department = this.readRequiredString(body.department, 'department');
+    const type = this.parsePolicyDocumentType(body.type);
+    const status = this.parsePolicyStatus(body.status);
+    const updatedBy =
+      this.normalizeOptionalString(body.updatedBy) ??
+      this.normalizeOptionalString(body.createdBy) ??
+      'Admin User';
+
+    const category = await this.prisma.category.findUnique({
+      where: { id: categoryId },
+    });
+
+    if (!category) {
+      throw new NotFoundException(`Category ${categoryId} was not found.`);
+    }
+
+    const data: Prisma.PolicyUncheckedUpdateInput = {
+      title,
+      description,
+      department,
+      type,
+      status,
+      categoryId,
+      version: existing.version,
+      isActive: status !== PolicyStatus.ARCHIVED,
+    };
+
+    if (file) {
+      const uploaded = await this.storage.uploadPolicyFile(file);
+      const extractedContent =
+        await this.policyContentExtractor.extractFromUploadedFile(file);
+      data.version = existing.version + 1;
+      data.fileName = file.originalname;
+      data.filePath = uploaded.filePath;
+      data.fileType = file.mimetype;
+      data.content = extractedContent;
+      data.analysisStatus = PolicyAnalysisStatus.IN_PROGRESS;
+      data.analysisProvider = null;
+      data.analysisModel = null;
+      data.analysisError = null;
+      data.analysisRequestedAt = new Date();
+      data.analysisCompletedAt = null;
+    }
+
+    try {
+      const updatedPolicy = await this.prisma.policy.update({
+        where: { id },
+        data,
+        include: policyInclude,
+      });
+
+      if (file) {
+        const analyzed = await this.persistPolicyAnalysis(
+          updatedPolicy.id,
+          updatedBy,
+          true,
+        );
+
+        return {
+          data: this.toPolicyResponse(analyzed),
+        };
+      }
+
+      return {
+        data: this.toPolicyResponse(updatedPolicy),
+      };
+    } catch (error: unknown) {
+      this.handlePrismaError(error);
+    }
+  }
+
+  async getPolicyFile(
+    id: string,
+    query: ListPoliciesQuery = {},
+    actorUserId?: string,
+  ) {
+    await this.assertLibraryAccess(id, query, actorUserId);
     const policy = await this.findPolicyById(id);
 
     if (!policy) {
@@ -216,7 +375,16 @@ export class PoliciesService {
     return { kind: 'redirect' as const, url };
   }
 
-  async getPolicyById(id: string) {
+  async getPolicyById(
+    id: string,
+    query: ListPoliciesQuery = {},
+    actorUserId?: string,
+  ) {
+    const assignedPolicyIds = await this.assertLibraryAccess(
+      id,
+      query,
+      actorUserId,
+    );
     const foundPolicy = await this.findPolicyById(id);
 
     if (!foundPolicy) {
@@ -227,9 +395,12 @@ export class PoliciesService {
 
     const relatedPolicies = await this.prisma.policy.findMany({
       where: {
-        id: { not: policy.id },
-        categoryId: policy.categoryId ?? undefined,
-        status: PolicyStatus.PUBLISHED,
+        AND: [
+          { id: { not: policy.id } },
+          assignedPolicyIds ? { id: { in: assignedPolicyIds } } : {},
+          { categoryId: policy.categoryId ?? undefined },
+          { status: PolicyStatus.PUBLISHED },
+        ],
       },
       include: policyInclude,
       orderBy: [{ updatedAt: 'desc' }],
@@ -273,6 +444,56 @@ export class PoliciesService {
       data: this.toPolicyResponse(analyzedPolicy),
       message: 'Policy analysis refreshed successfully.',
     };
+  }
+
+  private isAssignedLibraryQuery(query: ListPoliciesQuery) {
+    const flag = (
+      query.assignedToMe ??
+      query.visibility ??
+      ''
+    ).toLowerCase();
+
+    return flag === '1' || flag === 'true' || flag === 'assigned';
+  }
+
+  private async resolveAssignedPolicyIds(
+    query: ListPoliciesQuery,
+    actorUserId?: string,
+  ) {
+    if (!this.isAssignedLibraryQuery(query)) {
+      return null;
+    }
+
+    const userId =
+      this.normalizeOptionalString(actorUserId) ??
+      this.normalizeOptionalString(query.userId);
+
+    if (!userId) {
+      return [];
+    }
+
+    return this.policyAssignments.assignedPolicyIdsForUser(userId);
+  }
+
+  private async assertLibraryAccess(
+    policyId: string,
+    query: ListPoliciesQuery,
+    actorUserId?: string,
+  ) {
+    const assignedPolicyIds = await this.resolveAssignedPolicyIds(
+      query,
+      actorUserId,
+    );
+
+    if (!assignedPolicyIds) {
+      return null;
+    }
+
+    if (!assignedPolicyIds.includes(policyId)) {
+      throw new ForbiddenException('This policy is not assigned to you.');
+    }
+
+    return assignedPolicyIds;
   }
 
   private findPolicyById(id: string) {

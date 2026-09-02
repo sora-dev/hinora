@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import ComingSoon from "../../../components/dashboard/coming-soon";
+import EmployeeLocationsExperience from "../../../components/organization/employee-locations-experience";
 
 export const metadata: Metadata = {
   title: "Hinora | Location",
@@ -7,10 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function EmployeeLocationsPage() {
-  return (
-    <ComingSoon
-      variant="employee"
-      description="See locations, contacts, and policies that apply to your site."
-    />
-  );
+  return <EmployeeLocationsExperience />;
 }

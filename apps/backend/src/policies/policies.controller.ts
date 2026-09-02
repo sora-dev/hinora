@@ -2,7 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -21,8 +23,11 @@ export class PoliciesController {
   constructor(private readonly policiesService: PoliciesService) {}
 
   @Get()
-  listPolicies(@Query() query: Record<string, string | undefined>) {
-    return this.policiesService.listPolicies(query);
+  listPolicies(
+    @Query() query: Record<string, string | undefined>,
+    @Headers('x-hinora-user-id') userId?: string,
+  ) {
+    return this.policiesService.listPolicies(query, userId);
   }
 
   @Post('upload')
@@ -41,9 +46,31 @@ export class PoliciesController {
     return this.policiesService.uploadPolicy(file, body);
   }
 
+  @Patch(':id')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: policyUploadStorage,
+      limits: {
+        fileSize: 50 * 1024 * 1024,
+      },
+    }),
+  )
+  updatePolicy(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.policiesService.updatePolicy(id, file, body);
+  }
+
   @Get(':id/file')
-  async getPolicyFile(@Param('id') id: string, @Res() response: Response) {
-    const result = await this.policiesService.getPolicyFile(id);
+  async getPolicyFile(
+    @Param('id') id: string,
+    @Query() query: Record<string, string | undefined>,
+    @Headers('x-hinora-user-id') userId: string | undefined,
+    @Res() response: Response,
+  ) {
+    const result = await this.policiesService.getPolicyFile(id, query, userId);
 
     if (result.kind === 'redirect') {
       return response.redirect(result.url);
@@ -66,7 +93,11 @@ export class PoliciesController {
   }
 
   @Get(':id')
-  getPolicy(@Param('id') id: string) {
-    return this.policiesService.getPolicyById(id);
+  getPolicy(
+    @Param('id') id: string,
+    @Query() query: Record<string, string | undefined>,
+    @Headers('x-hinora-user-id') userId?: string,
+  ) {
+    return this.policiesService.getPolicyById(id, query, userId);
   }
 }

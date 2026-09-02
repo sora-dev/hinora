@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import {
   type AssessmentQuestionOption,
   type Policy,
 } from '@prisma/client';
+import { PolicyAssignmentsService } from '../policy-assignments/policy-assignments.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 type IncomingOption = {
@@ -61,38 +63,41 @@ const maxOptionsPerQuestion = 6;
 
 @Injectable()
 export class AssessmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly policyAssignments: PolicyAssignmentsService,
+  ) {}
 
   /** Every policy, with a summary of its assessment. Powers the policy picker. */
   async listAssessments() {
-    const [policies, assignedCount] = await Promise.all([
-      this.prisma.policy.findMany({
-        where: { isActive: true },
-        orderBy: [{ updatedAt: 'desc' }],
-        include: {
-          category: {
-            select: {
-              id: true,
-              name: true,
-              color: true,
-            },
-          },
-          assessment: {
-            select: {
-              id: true,
-              status: true,
-              updatedAt: true,
-              _count: { select: { questions: true } },
-            },
+    const policies = await this.prisma.policy.findMany({
+      where: { isActive: true },
+      orderBy: [{ updatedAt: 'desc' }],
+      include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
           },
         },
-      }),
-      this.countAssignedEmployees(),
-    ]);
+        assessment: {
+          select: {
+            id: true,
+            status: true,
+            updatedAt: true,
+            _count: { select: { questions: true } },
+          },
+        },
+      },
+    });
+    const assignedCounts = await this.policyAssignments.assignedUserCountsByPolicy(
+      policies.map((policy) => policy.id),
+    );
 
     return {
       data: policies.map((policy) => ({
-        ...this.toPolicySummary(policy, assignedCount),
+        ...this.toPolicySummary(policy, assignedCounts.get(policy.id) ?? 0),
         hasAssessment: policy.assessment !== null,
         assessmentStatus: policy.assessment?.status ?? null,
         questionCount: policy.assessment?._count.questions ?? 0,
@@ -113,7 +118,7 @@ export class AssessmentsService {
           },
         },
       }),
-      this.countAssignedEmployees(),
+      this.policyAssignments.countAssignedUsersForPolicy(policyId),
     ]);
 
     if (!policy) {
@@ -126,6 +131,248 @@ export class AssessmentsService {
         assessment: assessment ? this.toAssessmentDetail(assessment) : null,
       },
     };
+  }
+
+  async getTakeForPolicy(policyId: string, userId: string) {
+    const actorId = userId.trim();
+    if (!actorId) {
+      throw new BadRequestException('X-Hinora-User-Id is required.');
+    }
+
+    const [user, policy, assessment] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: actorId },
+        select: { id: true, status: true },
+      }),
+      this.prisma.policy.findUnique({
+        where: { id: policyId },
+        select: { id: true, title: true, version: true },
+      }),
+      this.prisma.assessment.findUnique({
+        where: { policyId },
+        include: {
+          questions: {
+            orderBy: { order: 'asc' },
+            include: { options: { orderBy: { order: 'asc' } } },
+          },
+        },
+      }),
+    ]);
+
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw new NotFoundException(`User ${actorId} was not found.`);
+    }
+    if (!policy) {
+      throw new NotFoundException(`Policy ${policyId} was not found.`);
+    }
+    if (!assessment || !this.isBuiltAssessment(assessment)) {
+      throw new NotFoundException('No assessment is available for this policy.');
+    }
+
+    const assignedIds = await this.policyAssignments.assignedPolicyIdsForUser(actorId);
+    if (!assignedIds.includes(policyId)) {
+      throw new ForbiddenException('This assessment is not assigned to you.');
+    }
+
+    const [results, assignment, draft] = await Promise.all([
+      this.prisma.testResult.findMany({
+        where: { userId: actorId, policyId },
+        orderBy: { submittedAt: 'desc' },
+      }),
+      this.policyAssignments.assignmentsForUser(actorId),
+      this.prisma.assessmentDraft.findUnique({
+        where: { userId_policyId: { userId: actorId, policyId } },
+      }),
+    ]);
+
+    const dueAt =
+      assignment
+        .filter((row) => row.policyId === policyId)
+        .sort((left, right) => left.dueAt.getTime() - right.dueAt.getTime())[0]?.dueAt ?? null;
+    const attemptCount = results.length;
+    const latest = results[0] ?? null;
+    const passed = Boolean(latest?.passed);
+    const remainingAttempts =
+      assessment.maximumAttempts === 0
+        ? null
+        : Math.max(0, assessment.maximumAttempts - attemptCount);
+    const canTake = !passed && (remainingAttempts === null || remainingAttempts > 0);
+
+    const questions = canTake
+      ? this.presentTakeQuestions(assessment)
+      : [];
+
+    return {
+      data: {
+        policyId: policy.id,
+        policyTitle: policy.title,
+        policyVersion: `v${policy.version}`,
+        title: assessment.title,
+        description: assessment.description,
+        instructions: assessment.instructions,
+        passingScore: assessment.passingScore,
+        maximumAttempts: assessment.maximumAttempts,
+        timeLimitMinutes: assessment.timeLimitMinutes,
+        attemptCount,
+        remainingAttempts,
+        canTake,
+        dueAt: dueAt?.toISOString() ?? null,
+        lastResult: latest
+          ? {
+              percent:
+                latest.totalQuestions > 0
+                  ? Math.round((latest.score / latest.totalQuestions) * 100)
+                  : 0,
+              correct: latest.score,
+              totalQuestions: latest.totalQuestions,
+              passed: latest.passed,
+              submittedAt: latest.submittedAt.toISOString(),
+            }
+          : null,
+        draft: canTake ? this.toDraftRecord(draft) : null,
+        questions,
+      },
+    };
+  }
+
+  async submitTakeForPolicy(
+    policyId: string,
+    userId: string,
+    body: Record<string, unknown>,
+  ) {
+    const take = await this.getTakeForPolicy(policyId, userId);
+    if (!take.data.canTake) {
+      throw new BadRequestException('You cannot take this assessment again.');
+    }
+
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { policyId },
+      include: {
+        questions: {
+          include: { options: true },
+        },
+      },
+    });
+    if (!assessment) {
+      throw new NotFoundException('No published assessment is available for this policy.');
+    }
+
+    const answers = this.readAnswers(body.answers);
+    let correct = 0;
+    for (const question of assessment.questions) {
+      const selected = answers[question.id];
+      const match = question.options.find((option) => option.id === selected);
+      if (match?.isCorrect) {
+        correct += 1;
+      }
+    }
+
+    const totalQuestions = assessment.questions.length;
+    const percent = totalQuestions > 0 ? Math.round((correct / totalQuestions) * 100) : 0;
+    const passed = percent >= assessment.passingScore;
+
+    const result = await this.prisma.testResult.create({
+      data: {
+        userId: userId.trim(),
+        policyId,
+        score: correct,
+        totalQuestions,
+        passed,
+      },
+    });
+
+    let certificateNumber: string | null = null;
+    if (passed && assessment.issueCertificateOnPass) {
+      const existing = await this.prisma.certificate.findFirst({
+        where: { userId: userId.trim(), policyId },
+      });
+      if (!existing) {
+        const created = await this.prisma.certificate.create({
+          data: {
+            userId: userId.trim(),
+            policyId,
+            certificateNumber: `HN-${policyId.slice(0, 8).toUpperCase()}-${Date.now()}`,
+          },
+        });
+        certificateNumber = created.certificateNumber;
+      } else {
+        certificateNumber = existing.certificateNumber;
+      }
+    }
+
+    await this.prisma.assessmentDraft.deleteMany({
+      where: { userId: userId.trim(), policyId },
+    });
+
+    return {
+      data: {
+        passed,
+        percent,
+        correct,
+        totalQuestions,
+        passingScore: assessment.passingScore,
+        showScoreImmediately: assessment.showScoreImmediately,
+        certificateNumber,
+        submittedAt: result.submittedAt.toISOString(),
+      },
+    };
+  }
+
+  async saveDraftForPolicy(
+    policyId: string,
+    userId: string,
+    body: Record<string, unknown>,
+  ) {
+    const take = await this.getTakeForPolicy(policyId, userId);
+    if (!take.data.canTake) {
+      throw new BadRequestException('You cannot update a draft for this assessment.');
+    }
+
+    const actorId = userId.trim();
+    const answers = this.readAnswers(body.answers);
+    const bookmarks = this.readBookmarks(body.bookmarks);
+    const questionIndex = this.readQuestionIndex(body.index ?? body.questionIndex);
+    const requestedStart =
+      typeof body.startedAt === 'string' ? new Date(body.startedAt) : null;
+    const startedAt =
+      requestedStart && !Number.isNaN(requestedStart.getTime())
+        ? requestedStart
+        : new Date();
+
+    const existing = await this.prisma.assessmentDraft.findUnique({
+      where: { userId_policyId: { userId: actorId, policyId } },
+    });
+
+    const row = await this.prisma.assessmentDraft.upsert({
+      where: { userId_policyId: { userId: actorId, policyId } },
+      create: {
+        userId: actorId,
+        policyId,
+        answers,
+        bookmarks,
+        questionIndex,
+        startedAt,
+      },
+      update: {
+        answers,
+        bookmarks,
+        questionIndex,
+        startedAt: existing?.startedAt ?? startedAt,
+      },
+    });
+
+    return { data: this.toDraftRecord(row) };
+  }
+
+  async clearDraftForPolicy(policyId: string, userId: string) {
+    const actorId = userId.trim();
+    if (!actorId) {
+      throw new BadRequestException('X-Hinora-User-Id is required.');
+    }
+    await this.prisma.assessmentDraft.deleteMany({
+      where: { userId: actorId, policyId },
+    });
+    return { data: { cleared: true } };
   }
 
   async saveAssessmentForPolicy(
@@ -143,6 +390,11 @@ export class AssessmentsService {
     const settings = this.parseSettings(body, policy);
     const questions = this.parseQuestions(body.questions);
     const actor = this.normalizeOptionalString(body.updatedBy) ?? 'system';
+    if (questions.length > 0 && settings.status !== AssessmentStatus.ARCHIVED) {
+      settings.status = AssessmentStatus.PUBLISHED;
+    } else if (questions.length === 0 && settings.status !== AssessmentStatus.ARCHIVED) {
+      settings.status = AssessmentStatus.DRAFT;
+    }
 
     await this.prisma.$transaction(
       async (tx) => {
@@ -218,12 +470,11 @@ export class AssessmentsService {
     return { data: { id: assessment.id, policyId } };
   }
 
-  /**
-   * There is no policy assignment model yet, so every active employee is
-   * treated as assigned. Replace this once Policy Assignments ships.
-   */
-  private countAssignedEmployees() {
-    return this.prisma.user.count({ where: { status: UserStatus.ACTIVE } });
+  private isBuiltAssessment(assessment: {
+    status: AssessmentStatus;
+    questions: unknown[];
+  }) {
+    return assessment.status !== AssessmentStatus.ARCHIVED && assessment.questions.length > 0;
   }
 
   private toPolicySummary(
@@ -249,6 +500,86 @@ export class AssessmentsService {
       updatedAt: policy.updatedAt.toISOString(),
       assignedCount,
     };
+  }
+
+  private presentTakeQuestions(assessment: AssessmentWithQuestions) {
+    const questions = assessment.randomizeQuestions
+      ? this.shuffle(assessment.questions)
+      : [...assessment.questions];
+
+    return questions.map((question) => {
+      const options = assessment.shuffleAnswerChoices
+        ? this.shuffle(question.options)
+        : [...question.options];
+      return {
+        id: question.id,
+        type: question.type,
+        prompt: question.prompt,
+        options: options.map((option) => ({
+          id: option.id,
+          text: option.text,
+        })),
+      };
+    });
+  }
+
+  private readAnswers(value: unknown) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {} as Record<string, string>;
+    }
+    const answers: Record<string, string> = {};
+    for (const [questionId, optionId] of Object.entries(value)) {
+      if (typeof optionId === 'string' && optionId.trim()) {
+        answers[questionId] = optionId.trim();
+      }
+    }
+    return answers;
+  }
+
+  private readBookmarks(value: unknown) {
+    if (!Array.isArray(value)) return [] as string[];
+    return [
+      ...new Set(
+        value
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    ];
+  }
+
+  private readQuestionIndex(value: unknown) {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.min(500, Math.floor(parsed)));
+  }
+
+  private toDraftRecord(
+    row: {
+      answers: unknown;
+      bookmarks: string[];
+      questionIndex: number;
+      startedAt: Date;
+    } | null,
+  ) {
+    if (!row) return null;
+    return {
+      answers: this.readAnswers(row.answers),
+      bookmarks: row.bookmarks,
+      index: row.questionIndex,
+      startedAt: row.startedAt.toISOString(),
+    };
+  }
+
+  private shuffle<T>(items: T[]) {
+    const copy = [...items];
+    for (let index = copy.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      const current = copy[index];
+      copy[index] = copy[swap];
+      copy[swap] = current;
+    }
+    return copy;
   }
 
   private toAssessmentDetail(assessment: AssessmentWithQuestions) {

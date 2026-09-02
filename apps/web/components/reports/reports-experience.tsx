@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Clock3 } from "lucide-react";
+import { recordClientAuditEvent } from "../../lib/record-audit-event";
 import DashboardShell from "../dashboard/dashboard-shell";
 import { ModuleGuide } from "../dashboard/module-guide";
 import { getSessionProfileDisplay } from "../dashboard/session";
@@ -9,16 +10,17 @@ import { ReportsCatalog } from "./reports-catalog";
 import { ReportsHistory } from "./reports-history";
 import { ReportsViewer } from "./reports-viewer";
 import {
-  buildReportSnapshot,
-  createHistoryId,
+  createReportHistory,
+  defaultReportRange,
+  deleteReportHistory,
   downloadSnapshotCsv,
   downloadSnapshotXls,
+  fetchReportHistory,
+  fetchReportSnapshot,
   formatDateRange,
   formatReportDateTime,
-  loadReportHistory,
   parseDateInput,
   printReport,
-  saveReportHistory,
   toDateInputValue,
   type ReportColumn,
   type ReportFormat,
@@ -36,10 +38,12 @@ function cx(...classes: Array<string | false | null | undefined>) {
 
 export default function ReportsExperience() {
   const [activeTab, setActiveTab] = useState<ReportsTab>("all");
-  const [from, setFrom] = useState(() => new Date());
-  const [to, setTo] = useState(() => new Date());
+  const [from, setFrom] = useState(() => defaultReportRange().from);
+  const [to, setTo] = useState(() => defaultReportRange().to);
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
-  const [historyReady, setHistoryReady] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [reportError, setReportError] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
   const [viewer, setViewer] = useState<{
     snapshot: ReportSnapshot;
     from: Date;
@@ -49,14 +53,29 @@ export default function ReportsExperience() {
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
 
   useEffect(() => {
-    setHistory(loadReportHistory());
-    setHistoryReady(true);
-  }, []);
+    let cancelled = false;
 
-  useEffect(() => {
-    if (!historyReady) return;
-    saveReportHistory(history);
-  }, [history, historyReady]);
+    async function loadHistory() {
+      try {
+        const items = await fetchReportHistory();
+        if (!cancelled) {
+          setHistory(items);
+          setHistoryError("");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setHistoryError(
+            error instanceof Error ? error.message : "Unable to load report history.",
+          );
+        }
+      }
+    }
+
+    void loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const actor = useMemo(() => getSessionProfileDisplay({ name: "Admin User" }).name, []);
 
@@ -64,19 +83,42 @@ export default function ReportsExperience() {
     setFrom(nextFrom);
     setTo(nextTo);
     setLastUpdated(new Date());
-    setViewer((current) =>
-      current
-        ? {
-            ...current,
-            from: nextFrom,
-            to: nextTo,
-            snapshot: buildReportSnapshot(current.snapshot.id, nextFrom, nextTo),
-          }
-        : current,
-    );
+    if (viewer) {
+      void loadSnapshot(viewer.snapshot.id, nextFrom, nextTo, { record: null, openViewer: true });
+    }
   }
 
-  function recordHistory(
+  async function loadSnapshot(
+    reportId: ReportId,
+    rangeFrom: Date,
+    rangeTo: Date,
+    options: { record: ReportFormat | null; openViewer: boolean },
+  ) {
+    setIsGenerating(true);
+    setReportError("");
+    try {
+      const snapshot = await fetchReportSnapshot(reportId, rangeFrom, rangeTo);
+      const generatedAt = new Date();
+      setFrom(rangeFrom);
+      setTo(rangeTo);
+      setLastUpdated(generatedAt);
+      if (options.openViewer) {
+        setViewer({ snapshot, from: rangeFrom, to: rangeTo, generatedAt });
+        setActiveTab("all");
+      }
+      if (options.record) {
+        void recordHistory(reportId, options.record, snapshot, rangeFrom, rangeTo);
+      }
+      return snapshot;
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : "Unable to generate report.");
+      return null;
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  async function recordHistory(
     reportId: ReportId,
     format: ReportFormat,
     snapshot: ReportSnapshot,
@@ -84,70 +126,96 @@ export default function ReportsExperience() {
     rangeTo = to,
     rowCount = snapshot.rows.length,
   ) {
-    const item: ReportHistoryItem = {
-      id: createHistoryId(),
-      reportId,
-      name: snapshot.name,
-      generatedAt: new Date().toISOString(),
-      generatedBy: actor,
-      dateFrom: toDateInputValue(rangeFrom),
-      dateTo: toDateInputValue(rangeTo),
-      format,
-      status: "Completed",
-      rowCount,
-    };
-    setHistory((current) => [item, ...current]);
-    setLastUpdated(new Date());
-  }
-
-  function openSnapshot(reportId: ReportId, rangeFrom = from, rangeTo = to, record: ReportFormat | null = "View") {
-    const snapshot = buildReportSnapshot(reportId, rangeFrom, rangeTo);
-    const generatedAt = new Date();
-    setViewer({ snapshot, from: rangeFrom, to: rangeTo, generatedAt });
-    setFrom(rangeFrom);
-    setTo(rangeTo);
-    setActiveTab("all");
-    if (record) {
-      recordHistory(reportId, record, snapshot, rangeFrom, rangeTo);
+    try {
+      const item = await createReportHistory({
+        reportId,
+        name: snapshot.name,
+        generatedAt: new Date().toISOString(),
+        generatedBy: actor,
+        dateFrom: toDateInputValue(rangeFrom),
+        dateTo: toDateInputValue(rangeTo),
+        format,
+        status: "Completed",
+        rowCount,
+      });
+      setHistory((current) => [item, ...current.filter((entry) => entry.id !== item.id)]);
+      setHistoryError("");
+      setLastUpdated(new Date());
+      if (format !== "View") {
+        recordClientAuditEvent({
+          action: "EXPORT",
+          module: "Reports",
+          resourceType: "Report",
+          resource: snapshot.name,
+          details:
+            format === "PDF"
+              ? "Report printed"
+              : `Report exported as ${format}`,
+        });
+      }
+    } catch (error) {
+      setHistoryError(
+        error instanceof Error ? error.message : "Unable to save report history.",
+      );
     }
   }
 
-  function exportCsv(reportId: ReportId, rangeFrom = from, rangeTo = to) {
-    const snapshot = buildReportSnapshot(reportId, rangeFrom, rangeTo);
-    downloadSnapshotCsv(snapshot);
-    recordHistory(reportId, "CSV", snapshot, rangeFrom, rangeTo);
+  function openSnapshot(reportId: ReportId, rangeFrom = from, rangeTo = to, record: ReportFormat | null = "View") {
+    void loadSnapshot(reportId, rangeFrom, rangeTo, { record, openViewer: true });
   }
 
-  function exportPdf(reportId: ReportId, rangeFrom = from, rangeTo = to) {
-    const snapshot = buildReportSnapshot(reportId, rangeFrom, rangeTo);
-    printReport(snapshot, formatDateRange(rangeFrom, rangeTo), formatReportDateTime(new Date()));
-    recordHistory(reportId, "PDF", snapshot, rangeFrom, rangeTo);
+  async function exportCsv(reportId: ReportId, rangeFrom = from, rangeTo = to) {
+    const snapshot = await loadSnapshot(reportId, rangeFrom, rangeTo, {
+      record: "CSV",
+      openViewer: false,
+    });
+    if (snapshot) {
+      downloadSnapshotCsv(snapshot);
+    }
+  }
+
+  async function exportPdf(reportId: ReportId, rangeFrom = from, rangeTo = to) {
+    const snapshot = await loadSnapshot(reportId, rangeFrom, rangeTo, {
+      record: "PDF",
+      openViewer: false,
+    });
+    if (snapshot) {
+      void printReport(snapshot, formatDateRange(rangeFrom, rangeTo), formatReportDateTime(new Date()));
+    }
   }
 
   function runViewer() {
     if (!viewer) return;
-    const snapshot = buildReportSnapshot(viewer.snapshot.id, from, to);
-    const generatedAt = new Date();
-    setViewer({ snapshot, from, to, generatedAt });
-    recordHistory(snapshot.id, "View", snapshot, from, to);
+    void loadSnapshot(viewer.snapshot.id, from, to, { record: "View", openViewer: true });
   }
 
   function downloadViewerXls(columns: ReportColumn[], rows: ReportRow[]) {
     if (!viewer) return;
     downloadSnapshotXls(viewer.snapshot, columns, rows);
-    recordHistory(viewer.snapshot.id, "XLS", viewer.snapshot, viewer.from, viewer.to, rows.length);
+    void recordHistory(viewer.snapshot.id, "XLS", viewer.snapshot, viewer.from, viewer.to, rows.length);
   }
 
   function printViewer(columns: ReportColumn[], rows: ReportRow[]) {
     if (!viewer) return;
-    printReport(viewer.snapshot, formatDateRange(viewer.from, viewer.to), formatReportDateTime(viewer.generatedAt), columns, rows);
-    recordHistory(viewer.snapshot.id, "PDF", viewer.snapshot, viewer.from, viewer.to, rows.length);
+    void printReport(viewer.snapshot, formatDateRange(viewer.from, viewer.to), formatReportDateTime(viewer.generatedAt), columns, rows);
+    void recordHistory(viewer.snapshot.id, "PDF", viewer.snapshot, viewer.from, viewer.to, rows.length);
   }
 
   return (
     <DashboardShell variant="admin">
       <div className="px-4 py-5 md:px-5">
         {viewer ? (
+          <>
+            {reportError ? (
+              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-[var(--color-error)]">
+                {reportError}
+              </div>
+            ) : null}
+            {isGenerating ? (
+              <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-[var(--color-active-menu)]">
+                Refreshing report from live policy data…
+              </div>
+            ) : null}
           <ReportsViewer
             snapshot={viewer.snapshot}
             from={viewer.from}
@@ -160,6 +228,7 @@ export default function ReportsExperience() {
             onDownloadXls={downloadViewerXls}
             onPrint={printViewer}
           />
+          </>
         ) : (
           <>
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -174,6 +243,18 @@ export default function ReportsExperience() {
                 Last Updated {formatReportDateTime(lastUpdated)}
               </p>
             </div>
+
+            {historyError || reportError ? (
+              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-[var(--color-error)]">
+                {reportError || historyError}
+              </div>
+            ) : null}
+
+            {isGenerating ? (
+              <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-[var(--color-active-menu)]">
+                Generating report from live policy data…
+              </div>
+            ) : null}
 
             <div className="mb-5 overflow-x-auto border-b border-slate-200">
               <div className="flex min-w-max gap-1">
@@ -225,7 +306,19 @@ export default function ReportsExperience() {
                 onExportPdf={(item) =>
                   exportPdf(item.reportId, parseDateInput(item.dateFrom), parseDateInput(item.dateTo))
                 }
-                onDelete={(item) => setHistory((current) => current.filter((entry) => entry.id !== item.id))}
+                onDelete={(item) => {
+                  void (async () => {
+                    try {
+                      await deleteReportHistory(item.id);
+                      setHistory((current) => current.filter((entry) => entry.id !== item.id));
+                      setHistoryError("");
+                    } catch (error) {
+                      setHistoryError(
+                        error instanceof Error ? error.message : "Unable to delete report history.",
+                      );
+                    }
+                  })();
+                }}
               />
             )}
 

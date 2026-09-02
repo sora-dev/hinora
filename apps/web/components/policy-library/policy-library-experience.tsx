@@ -25,6 +25,8 @@ import { DropdownSelect } from "../ui/dropdown-select";
 import { EmptyState } from "../ui/empty-state";
 import { ModuleGuide } from "../dashboard/module-guide";
 import { getApiBaseUrl } from "../../lib/api-base-url";
+import { getSessionUserIdentity } from "../dashboard/session";
+import { fetchBookmarkIds, togglePolicyBookmark } from "../bookmarks/bookmarks-data";
 
 type PolicyStatus = "DRAFT" | "UNDER_REVIEW" | "PUBLISHED" | "ARCHIVED";
 type PolicyType = "POLICY" | "GUIDELINE" | "PROCEDURE";
@@ -111,6 +113,7 @@ type PoliciesResponse = {
     total: number;
     totalPages: number;
   };
+  categoryCounts?: Record<string, number>;
 };
 
 type DisplayPolicyRecord = {
@@ -323,6 +326,7 @@ export default function PolicyLibraryExperience({
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(true);
   const [isPoliciesLoading, setIsPoliciesLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [resolvedApiBaseUrl, setResolvedApiBaseUrl] = useState(
     getApiBaseCandidates()[0],
   );
@@ -368,6 +372,13 @@ export default function PolicyLibraryExperience({
         params.set("status", selectedStatus);
       }
 
+      params.set("assignedToMe", "1");
+
+      const identity = getSessionUserIdentity();
+      if (identity?.userId) {
+        params.set("userId", identity.userId);
+      }
+
       const { data, apiBaseUrl } = await requestJson<PoliciesResponse>(`/policies?${params.toString()}`);
       setPoliciesResponse(data);
       setResolvedApiBaseUrl(apiBaseUrl);
@@ -387,6 +398,38 @@ export default function PolicyLibraryExperience({
     void loadPolicies();
   }, [loadPolicies]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void fetchBookmarkIds()
+      .then((payload) => {
+        if (!cancelled) setBookmarkedIds(new Set(payload.policyIds));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleToggleBookmark(policyId: string) {
+    const currently = bookmarkedIds.has(policyId);
+    setBookmarkedIds((current) => {
+      const next = new Set(current);
+      if (currently) next.delete(policyId);
+      else next.add(policyId);
+      return next;
+    });
+    try {
+      await togglePolicyBookmark(policyId, currently);
+    } catch {
+      setBookmarkedIds((current) => {
+        const next = new Set(current);
+        if (currently) next.add(policyId);
+        else next.delete(policyId);
+        return next;
+      });
+    }
+  }
+
   const allCategories = useMemo(
     () => flattenCategories(categoriesResponse?.data ?? []).filter((category) => category.status === "ACTIVE"),
     [categoriesResponse],
@@ -397,14 +440,24 @@ export default function PolicyLibraryExperience({
     [],
   );
 
+  const assignedCategoryCounts = useMemo(
+    () => policiesResponse?.categoryCounts ?? {},
+    [policiesResponse?.categoryCounts],
+  );
+
+  const assignedCategories = useMemo(
+    () => allCategories.filter((category) => (assignedCategoryCounts[category.id] ?? 0) > 0),
+    [allCategories, assignedCategoryCounts],
+  );
+
   const categoryCards = useMemo<CategoryCard[]>(() => {
-    const dynamicCards = allCategories
+    const dynamicCards = assignedCategories
       .slice()
-      .sort((left, right) => right.policyCount - left.policyCount)
+      .sort((left, right) => (assignedCategoryCounts[right.id] ?? 0) - (assignedCategoryCounts[left.id] ?? 0))
       .map((category, index) => ({
         key: category.id,
         label: category.name,
-        count: category.policyCount,
+        count: assignedCategoryCounts[category.id] ?? 0,
         Icon: categoryIconCycle[index % categoryIconCycle.length] ?? FolderClosed,
         color: category.color,
       }));
@@ -419,7 +472,7 @@ export default function PolicyLibraryExperience({
       },
       ...dynamicCards,
     ];
-  }, [allCategories, categoryIconCycle, policiesResponse?.stats.totalPolicies]);
+  }, [assignedCategories, assignedCategoryCounts, categoryIconCycle, policiesResponse?.stats.totalPolicies]);
 
   const filteredPolicies = useMemo(() => {
     return (policiesResponse?.data ?? []).map((policy) =>
@@ -453,7 +506,7 @@ export default function PolicyLibraryExperience({
           <div className="mb-5">
             <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">Policy Library</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Browse, search, and read all company policies and documents.
+              Browse, search, and read the policies assigned to you.
             </p>
           </div>
 
@@ -463,7 +516,7 @@ export default function PolicyLibraryExperience({
                 <div>
                   <h2 className="text-[1.55rem] font-bold text-slate-900">Find the policy you need</h2>
                   <p className="mt-1 text-sm text-slate-600">
-                    Search or browse our complete collection of policies and documents.
+                    Search or browse the policies that have been assigned to you.
                   </p>
 
                   <label className="mt-5 flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-slate-400 shadow-sm">
@@ -657,8 +710,18 @@ export default function PolicyLibraryExperience({
                               </Link>
                             </td>
                             <td className="px-3 py-4 text-slate-400">
-                              <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white">
-                                <Bookmark className="h-4 w-4" />
+                              <button
+                                type="button"
+                                onClick={() => void handleToggleBookmark(policy.id)}
+                                aria-label={bookmarkedIds.has(policy.id) ? "Remove bookmark" : "Add bookmark"}
+                                className={cx(
+                                  "inline-flex h-9 w-9 items-center justify-center rounded-lg border",
+                                  bookmarkedIds.has(policy.id)
+                                    ? "border-amber-200 bg-amber-50 text-[var(--color-warning)]"
+                                    : "border-slate-200 bg-white",
+                                )}
+                              >
+                                <Bookmark className={cx("h-4 w-4", bookmarkedIds.has(policy.id) && "fill-current")} />
                               </button>
                             </td>
                             <td className="px-3 py-4 text-slate-400">
@@ -685,8 +748,17 @@ export default function PolicyLibraryExperience({
                           >
                             <policy.Icon className="h-5 w-5" />
                           </span>
-                          <button type="button" className="text-slate-400">
-                            <Bookmark className="h-4.5 w-4.5" />
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleBookmark(policy.id)}
+                            aria-label={bookmarkedIds.has(policy.id) ? "Remove bookmark" : "Add bookmark"}
+                            className={cx(
+                              bookmarkedIds.has(policy.id)
+                                ? "text-[var(--color-warning)]"
+                                : "text-slate-400",
+                            )}
+                          >
+                            <Bookmark className={cx("h-4.5 w-4.5", bookmarkedIds.has(policy.id) && "fill-current")} />
                           </button>
                         </div>
                         <h3 className="mt-4 text-base font-bold text-slate-900">{policy.title}</h3>
@@ -755,7 +827,7 @@ export default function PolicyLibraryExperience({
                   <DropdownSelect
                     value={selectedCategoryId === "all" ? "" : selectedCategoryId}
                     onChange={(value) => setSelectedCategoryId(value || "all")}
-                    options={allCategories.map((category) => ({
+                    options={assignedCategories.map((category) => ({
                       value: category.id,
                       label: category.name,
                     }))}
@@ -782,7 +854,9 @@ export default function PolicyLibraryExperience({
                 </label>
                 <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
                   <div className="font-semibold text-slate-700">Categories Loaded</div>
-                  <div className="mt-1">{allCategories.length} active categories available</div>
+                  <div className="mt-1">
+                    {assignedCategories.length} assigned {assignedCategories.length === 1 ? "category" : "categories"} available
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -855,17 +929,17 @@ export default function PolicyLibraryExperience({
               {(policiesResponse?.stats.totalPolicies ?? 0) === 0 ? (
                 <EmptyState
                   icon={BookOpenText}
-                  title="No policies have been added yet."
+                  title="No policies have been assigned yet."
                   description={
                     mode === "admin"
-                      ? "Published policies will appear here for browsing and reading across the organization."
-                      : "No policies have been published for you yet. Check back later or contact your administrator."
+                      ? "Assign a policy to users, a department, a location, or the organization to make it available here."
+                      : "No policies have been assigned to you yet. Check back later or contact your administrator."
                   }
-                  actionLabel={mode === "admin" ? "Go to Policy Management" : undefined}
+                  actionLabel={mode === "admin" ? "Go to Policy Assignments" : undefined}
                   onAction={
                     mode === "admin"
                       ? () => {
-                          window.location.href = "/admin/policy-management";
+                          window.location.href = "/admin/policy-assignments";
                         }
                       : undefined
                   }

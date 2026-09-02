@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { hasAdminPortalAccess } from "./permission-modules";
 import { getUnifiedNavSections, type NavItem, type NavSection, type NavVariant } from "./navigation";
+import { getHinoraSession } from "./session";
 import { API_BASE_URL } from "../../lib/api-base-url";
+
+const personalComplianceKeys = new Set(["My Compliance", "Bookmarks", "Notifications"]);
 
 const sessionStorageKey = "hinora_session";
 const permissionsCacheKey = "hinora_sidebar_permissions";
@@ -35,10 +38,23 @@ const legacyModuleAliases: Record<string, string[]> = {
   Location: ["Branches"],
 };
 
-function hasModuleAccess(allowedModules: Set<string>, item: NavItem) {
+function sessionLooksLikeAdmin() {
+  const session = getHinoraSession();
+  return session?.role === "ADMIN";
+}
+
+function hasModuleAccess(
+  allowedModules: Set<string>,
+  item: NavItem,
+  keepPersonalCompliance = false,
+) {
   // The backend module list does not cover every navigation entry yet, so items
   // without a moduleKey stay visible instead of disappearing for every role.
   if (!item.moduleKey) {
+    return true;
+  }
+
+  if (keepPersonalCompliance && personalComplianceKeys.has(item.moduleKey)) {
     return true;
   }
 
@@ -164,7 +180,11 @@ function toState(cache: CachedPermissionsPayload | null): SidebarPermissionsStat
   };
 }
 
-function filterSections(sections: readonly NavSection[], allowedModules: Set<string> | null) {
+function filterSections(
+  sections: readonly NavSection[],
+  allowedModules: Set<string> | null,
+  keepPersonalCompliance = false,
+) {
   if (!allowedModules) {
     return sections;
   }
@@ -172,7 +192,9 @@ function filterSections(sections: readonly NavSection[], allowedModules: Set<str
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => hasModuleAccess(allowedModules, item)),
+      items: section.items.filter((item) =>
+        hasModuleAccess(allowedModules, item, keepPersonalCompliance),
+      ),
     }))
     .filter((section) => section.items.length > 0);
 }
@@ -183,9 +205,18 @@ export function useSidebarPermissions(roleTitleOverride?: string, fallbackVarian
     allowedModules: null,
     portal: null,
   });
+  const [sessionIsAdmin, setSessionIsAdmin] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    const adminSession = sessionLooksLikeAdmin();
+    setSessionIsAdmin(adminSession);
+    if (adminSession) {
+      setState((current) => ({
+        ...current,
+        portal: current.portal === "employee" ? "admin" : current.portal ?? "admin",
+      }));
+    }
     const resolvedRoleTitle = resolveRoleTitle(roleTitleOverride);
 
     async function loadModules(options?: { background?: boolean }) {
@@ -218,7 +249,7 @@ export function useSidebarPermissions(roleTitleOverride?: string, fallbackVarian
         const nextCache: CachedPermissionsPayload = {
           roleTitle: resolvedRoleTitle,
           modules: normalizeCachedModules(payload.modules ?? []),
-          portal: payload.portal ?? null,
+          portal: adminSession ? "admin" : payload.portal ?? null,
         };
 
         writeCachedPermissions(nextCache);
@@ -249,8 +280,9 @@ export function useSidebarPermissions(roleTitleOverride?: string, fallbackVarian
   }, [roleTitleOverride]);
 
   return useMemo(() => {
-    const resolvedHasAdminPortalAccess =
-      state.portal === "admin"
+    const resolvedHasAdminPortalAccess = sessionIsAdmin
+      ? true
+      : state.portal === "admin"
         ? true
         : state.portal === "employee"
           ? false
@@ -259,11 +291,20 @@ export function useSidebarPermissions(roleTitleOverride?: string, fallbackVarian
             : fallbackVariant === "admin";
 
     const baseSections = getUnifiedNavSections(resolvedHasAdminPortalAccess);
-    const sections = filterSections(baseSections, state.allowedModules);
+    const sections = filterSections(
+      baseSections,
+      state.allowedModules,
+      resolvedHasAdminPortalAccess,
+    );
 
     return {
       sections,
       hasAdminPortalAccess: resolvedHasAdminPortalAccess,
     };
-  }, [fallbackVariant, state.allowedModules, state.portal]);
+  }, [fallbackVariant, sessionIsAdmin, state.allowedModules, state.portal]);
+}
+
+export function useResolvedNavVariant(fallback: NavVariant = "employee"): NavVariant {
+  const { hasAdminPortalAccess: isAdminPortal } = useSidebarPermissions(undefined, fallback);
+  return isAdminPortal ? "admin" : "employee";
 }

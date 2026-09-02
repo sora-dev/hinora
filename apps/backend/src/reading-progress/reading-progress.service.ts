@@ -3,18 +3,28 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { PolicyAssignmentsService } from '../policy-assignments/policy-assignments.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ReadingProgressService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly policyAssignments: PolicyAssignmentsService,
+  ) {}
 
   async listForUser(query: Record<string, unknown>) {
     const userId = await this.resolveUserId(query);
     const limit = this.readOptionalPositiveInt(query.limit) ?? 10;
+    const assignedPolicyIds =
+      await this.policyAssignments.assignedPolicyIdsForUser(userId);
+
+    if (assignedPolicyIds.length === 0) {
+      return { data: [] };
+    }
 
     const rows = await this.prisma.policyReadingProgress.findMany({
-      where: { userId },
+      where: { userId, policyId: { in: assignedPolicyIds } },
       include: {
         policy: {
           select: {
@@ -124,10 +134,7 @@ export class ReadingProgressService {
     const nextPages = Math.max(existing?.pagesViewed ?? 0, pagesViewed);
     const nextScroll = Math.max(existing?.scrollDepthPercent ?? 0, scrollDepthPercent);
     const nextTime = Math.max(existing?.timeSpentSeconds ?? 0, timeSpentSeconds);
-    const completedAt =
-      nextProgress >= 100
-        ? (existing?.completedAt ?? new Date())
-        : existing?.completedAt ?? null;
+    const completedAt = existing?.completedAt ?? null;
 
     const row = await this.prisma.policyReadingProgress.upsert({
       where: {

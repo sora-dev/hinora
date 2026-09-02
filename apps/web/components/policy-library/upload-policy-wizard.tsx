@@ -175,9 +175,21 @@ const AI_OPTION_CONFIG: AiOptionConfig[] = [
 ];
 
 export type UploadWizardSubmitPayload = {
-  file: File;
+  file: File | null;
   form: PolicyInformationForm;
   aiOptions: AiProcessingOptions;
+};
+
+export type WizardExistingPolicy = {
+  id: string;
+  title: string;
+  description: string | null;
+  fileName: string;
+  department: string;
+  type: PolicyInformationForm["type"];
+  status: PolicyInformationForm["status"];
+  version: number;
+  categoryId: string | null;
 };
 
 type UploadPolicyWizardProps = {
@@ -185,6 +197,7 @@ type UploadPolicyWizardProps = {
   onClose: () => void;
   categories?: WizardCategoryOption[];
   departmentOptions?: string[];
+  existingPolicy?: WizardExistingPolicy | null;
   onSaveDraft?: (payload: UploadWizardSubmitPayload) => void | Promise<void>;
   onPublish?: (payload: UploadWizardSubmitPayload) => void | Promise<void>;
 };
@@ -291,6 +304,34 @@ function buildFormFromExtracted(
     effectiveDate: extracted.effectiveDate,
     reviewDate: extracted.reviewDate,
     tags: [...extracted.keywords],
+    owner: "",
+    regulatoryReferences: "",
+    relatedPolicies: "",
+    audience: "All Employees",
+    internalNotes: "",
+  };
+}
+
+function formatPolicyVersion(version: number) {
+  return `${Math.max(1, version)}.0`;
+}
+
+function buildFormFromExistingPolicy(
+  policy: WizardExistingPolicy,
+  nextVersion = false,
+): PolicyInformationForm {
+  return {
+    title: policy.title,
+    description: (policy.description ?? "").slice(0, DESCRIPTION_MAX) || buildDefaultDescription(policy.title).slice(0, DESCRIPTION_MAX),
+    version: formatPolicyVersion(nextVersion ? policy.version + 1 : policy.version),
+    pages: "",
+    categoryId: policy.categoryId ?? "",
+    department: policy.department,
+    type: policy.type,
+    status: policy.status,
+    effectiveDate: toDateInputValue(new Date()),
+    reviewDate: toDateInputValue(new Date(new Date().setFullYear(new Date().getFullYear() + 1))),
+    tags: [],
     owner: "",
     regulatoryReferences: "",
     relatedPolicies: "",
@@ -969,6 +1010,7 @@ function buildAiPreviewItems(
 function ReviewPublishStep({
   form,
   file,
+  existingFileName,
   categoryName,
   aiOptions,
   showPreview,
@@ -977,7 +1019,8 @@ function ReviewPublishStep({
   onConfigureAssignment,
 }: {
   form: PolicyInformationForm;
-  file: File;
+  file: File | null;
+  existingFileName?: string;
   categoryName: string;
   aiOptions: AiProcessingOptions;
   showPreview: boolean;
@@ -1076,8 +1119,16 @@ function ReviewPublishStep({
                 <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">
                   File
                 </div>
-                <div className="mt-0.5 truncate text-sm font-semibold text-slate-800">{file.name}</div>
-                <div className="text-xs text-slate-400">{formatFileSize(file.size)}</div>
+                <div className="mt-0.5 truncate text-sm font-semibold text-slate-800">
+                  {file?.name ?? existingFileName ?? "—"}
+                </div>
+                <div className="text-xs text-slate-400">
+                  {file
+                    ? formatFileSize(file.size)
+                    : existingFileName
+                      ? "Current file kept"
+                      : ""}
+                </div>
               </div>
             </div>
           </div>
@@ -1195,6 +1246,7 @@ export default function UploadPolicyWizard({
   onClose,
   categories = [],
   departmentOptions = [],
+  existingPolicy = null,
   onSaveDraft,
   onPublish,
 }: UploadPolicyWizardProps) {
@@ -1219,6 +1271,8 @@ export default function UploadPolicyWizard({
     ),
   );
 
+  const isEditing = Boolean(existingPolicy);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -1227,7 +1281,7 @@ export default function UploadPolicyWizard({
     setStep(1);
     setSelectedFile(null);
     setExtracted(null);
-    setForm(null);
+    setForm(existingPolicy ? buildFormFromExistingPolicy(existingPolicy) : null);
     setAiOptions(DEFAULT_AI_OPTIONS);
     setIsDragging(false);
     setLocalError("");
@@ -1237,7 +1291,7 @@ export default function UploadPolicyWizard({
     setIsPublishing(false);
     setShowPolicyPreview(false);
     setShowAssignmentNote(false);
-  }, [open]);
+  }, [existingPolicy, open]);
 
   useEffect(() => {
     if (!open) {
@@ -1269,7 +1323,7 @@ export default function UploadPolicyWizard({
     if (!file) {
       setSelectedFile(null);
       setExtracted(null);
-      setForm(null);
+      setForm(existingPolicy ? buildFormFromExistingPolicy(existingPolicy) : null);
       setLocalError("");
       return;
     }
@@ -1288,7 +1342,17 @@ export default function UploadPolicyWizard({
     setLocalError("");
     setSelectedFile(file);
     setExtracted(preview);
-    setForm(buildFormFromExtracted(preview, categories));
+    setForm((current) => {
+      if (existingPolicy) {
+        const next = current ?? buildFormFromExistingPolicy(existingPolicy, true);
+        return {
+          ...next,
+          version: formatPolicyVersion(existingPolicy.version + 1),
+        };
+      }
+
+      return buildFormFromExtracted(preview, categories);
+    });
   }
 
   function handleDrop(event: DragEvent<HTMLLabelElement>) {
@@ -1311,9 +1375,13 @@ export default function UploadPolicyWizard({
   }
 
   function handleNext() {
-    if (step === 1 && !selectedFile) {
+    if (step === 1 && !selectedFile && !existingPolicy) {
       setLocalError("Please upload a policy file to continue.");
       return;
+    }
+
+    if (step === 1 && existingPolicy && !form) {
+      setForm(buildFormFromExistingPolicy(existingPolicy, Boolean(selectedFile)));
     }
 
     if (step === 2) {
@@ -1334,8 +1402,12 @@ export default function UploadPolicyWizard({
   }
 
   async function handleSaveDraft() {
-    if (!selectedFile || !form) {
-      setLocalError("Please upload a file and complete the required fields first.");
+    if ((!selectedFile && !existingPolicy) || !form) {
+      setLocalError(
+        existingPolicy
+          ? "Please complete the required fields first."
+          : "Please upload a file and complete the required fields first.",
+      );
       return;
     }
 
@@ -1365,8 +1437,12 @@ export default function UploadPolicyWizard({
   }
 
   async function handlePublish() {
-    if (!selectedFile || !form) {
-      setLocalError("Please upload a file and complete the required fields first.");
+    if ((!selectedFile && !existingPolicy) || !form) {
+      setLocalError(
+        existingPolicy
+          ? "Please complete the required fields first."
+          : "Please upload a file and complete the required fields first.",
+      );
       return;
     }
 
@@ -1432,10 +1508,12 @@ export default function UploadPolicyWizard({
             </span>
             <div className="min-w-0">
               <h2 id="upload-policy-title" className="text-lg font-bold text-slate-900">
-                Upload Policy
+                {isEditing ? "Edit Policy" : "Upload Policy"}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Upload a new policy document and configure its details.
+                {isEditing
+                  ? "Upload a new file to publish the next version, or update the policy details."
+                  : "Upload a new policy document and configure its details."}
               </p>
             </div>
           </div>
@@ -1454,6 +1532,20 @@ export default function UploadPolicyWizard({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
           {step === 1 ? (
             <div className="space-y-4">
+              {existingPolicy ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[var(--color-active-menu)]">
+                    <FileText className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold text-slate-900">{existingPolicy.fileName}</div>
+                    <div className="mt-0.5 text-xs text-slate-400">
+                      Current file · Version {formatPolicyVersion(existingPolicy.version)}
+                      {selectedFile ? " · will be replaced" : ""}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <label
                 htmlFor={fileInputId}
                 onDragEnter={(event) => {
@@ -1480,7 +1572,9 @@ export default function UploadPolicyWizard({
                   <CloudUpload className="h-7 w-7" />
                 </span>
                 <p className="mt-4 text-sm font-semibold text-slate-700">
-                  Drag and drop your policy file here or
+                  {isEditing
+                    ? "Drag and drop a new version here or"
+                    : "Drag and drop your policy file here or"}
                 </p>
                 <span className="mt-3 inline-flex h-10 items-center rounded-xl border border-[var(--color-active-menu)] bg-white px-4 text-sm font-bold text-[var(--color-active-menu)] shadow-sm">
                   Browse Files
@@ -1600,10 +1694,11 @@ export default function UploadPolicyWizard({
             />
           ) : null}
 
-          {step === 4 && form && selectedFile ? (
+          {step === 4 && form && (selectedFile || existingPolicy) ? (
             <ReviewPublishStep
               form={form}
               file={selectedFile}
+              existingFileName={existingPolicy?.fileName}
               categoryName={categoryName}
               aiOptions={aiOptions}
               showPreview={showPolicyPreview}
@@ -1649,7 +1744,7 @@ export default function UploadPolicyWizard({
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
               >
                 <Save className="h-4 w-4" />
-                <span>{isSavingDraft ? "Saving..." : "Save as Draft"}</span>
+                <span>{isSavingDraft ? "Saving..." : isEditing ? "Save Draft" : "Save as Draft"}</span>
               </button>
             ) : null}
             {step === 4 ? (
@@ -1660,7 +1755,15 @@ export default function UploadPolicyWizard({
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-5 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(37,99,235,0.18)] transition hover:bg-[var(--color-hover)] disabled:opacity-60"
               >
                 <Send className="h-4 w-4" />
-                <span>{isPublishing ? "Publishing..." : "Publish Policy"}</span>
+                <span>
+                  {isPublishing
+                    ? "Publishing..."
+                    : isEditing
+                      ? selectedFile
+                        ? "Publish New Version"
+                        : "Save Changes"
+                      : "Publish Policy"}
+                </span>
                 {!isPublishing ? <ArrowRight className="h-4 w-4" /> : null}
               </button>
             ) : (

@@ -8,10 +8,12 @@ import { BrandLockup } from "./primitives";
 import {
   getAskHinoraHref,
   isNavItemActive,
+  type NavItem,
   type NavSection,
   type NavVariant,
 } from "./navigation";
 import { useSidebarPermissions } from "./use-sidebar-permissions";
+import { useInboxUnreadCount } from "../inbox/use-inbox-unread-count";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -62,14 +64,22 @@ function useResolvedSections(variant: NavVariant, roleTitle?: string) {
   return useSidebarPermissions(roleTitle, variant);
 }
 
+function navBadge(item: NavItem, unreadCount: number) {
+  if (item.moduleKey === "Notifications") {
+    return unreadCount > 0 ? String(unreadCount > 99 ? "99+" : unreadCount) : undefined;
+  }
+  return item.badge;
+}
+
 export function DashboardSidebar({ variant, roleTitle, className }: NavProps) {
   const pathname = usePathname();
   const { sections } = useResolvedSections(variant, roleTitle);
+  const unreadCount = useInboxUnreadCount();
 
   return (
     <aside
       className={cx(
-        "hidden bg-[linear-gradient(180deg,var(--color-nav-start)_0%,var(--color-nav-end)_100%)] px-4 py-[22px] text-white xl:flex xl:h-screen xl:flex-col xl:sticky xl:top-0",
+        "hidden bg-[linear-gradient(180deg,var(--color-nav-start)_0%,var(--color-nav-end)_100%)] px-4 py-[22px] text-white xl:sticky xl:top-0 xl:flex xl:h-screen xl:w-full xl:flex-col",
         className,
       )}
     >
@@ -83,6 +93,7 @@ export function DashboardSidebar({ variant, roleTitle, className }: NavProps) {
             <div className="mt-1 space-y-0.5">
               {section.items.map((item) => {
                 const active = isNavItemActive(item.href, pathname);
+                const badge = navBadge(item, unreadCount);
 
                 return (
                   <Link
@@ -98,9 +109,9 @@ export function DashboardSidebar({ variant, roleTitle, className }: NavProps) {
                   >
                     <item.Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2.3 : 1.9} />
                     <span className="min-w-0 flex-1">{item.label}</span>
-                    {item.badge ? (
+                    {badge ? (
                       <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--color-nav-active)] px-1 text-[0.68rem] font-bold text-white">
-                        {item.badge}
+                        {badge}
                       </span>
                     ) : null}
                   </Link>
@@ -121,6 +132,7 @@ export function DashboardSidebar({ variant, roleTitle, className }: NavProps) {
 export function DashboardMobileNav({ variant, roleTitle, className }: NavProps) {
   const pathname = usePathname();
   const { sections } = useResolvedSections(variant, roleTitle);
+  const unreadCount = useInboxUnreadCount();
 
   return (
     <div className={cx("border-b border-slate-200 bg-white px-4 py-3 xl:hidden", className)}>
@@ -145,6 +157,7 @@ export function DashboardMobileNav({ variant, roleTitle, className }: NavProps) 
               <div className="grid gap-2 sm:grid-cols-2">
                 {section.items.map((item) => {
                   const active = isNavItemActive(item.href, pathname);
+                  const badge = navBadge(item, unreadCount);
 
                   return (
                     <Link
@@ -160,9 +173,9 @@ export function DashboardMobileNav({ variant, roleTitle, className }: NavProps) 
                     >
                       <item.Icon className="h-4 w-4 shrink-0" />
                       <span className="min-w-0 flex-1">{item.label}</span>
-                      {item.badge ? (
+                      {badge ? (
                         <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--color-nav-active)] px-1 text-[0.7rem] font-bold text-white">
-                          {item.badge}
+                          {badge}
                         </span>
                       ) : null}
                     </Link>

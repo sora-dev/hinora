@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { installApiActorHeaders } from "../../lib/api-actor";
 import {
   THEME_CHANGE_EVENT,
   applyThemeClass,
@@ -18,6 +19,8 @@ import {
   type ResolvedTheme,
   type ThemePreference,
 } from "../../lib/theme";
+
+installApiActorHeaders();
 
 type ThemeContextValue = {
   theme: ThemePreference;

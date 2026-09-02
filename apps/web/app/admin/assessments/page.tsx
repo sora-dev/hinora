@@ -15,9 +15,15 @@ function resolveTab(value: string | string[] | undefined): BuilderTab {
 export default async function AdminAssessmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string | string[] }>;
+  searchParams: Promise<{ tab?: string | string[]; policyId?: string | string[] }>;
 }) {
   const params = await searchParams;
+  const policyId = Array.isArray(params.policyId) ? params.policyId[0] : params.policyId;
 
-  return <AssessmentBuilderClient initialTab={resolveTab(params.tab)} />;
+  return (
+    <AssessmentBuilderClient
+      initialTab={resolveTab(params.tab)}
+      initialPolicyId={policyId}
+    />
+  );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,7 +16,7 @@ import {
   Headphones,
   History,
   LoaderCircle,
-  Lock,
+  Lock,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
   MoreHorizontal,
   PauseCircle,
   PlayCircle,
@@ -29,6 +29,7 @@ import { DashboardTopbar } from "../dashboard/primitives";
 import { DashboardMobileNav, DashboardSidebar } from "../dashboard/dashboard-nav";
 import { getSessionUserIdentity } from "../dashboard/session";
 import { getApiBaseUrl } from "../../lib/api-base-url";
+import { fetchBookmarkStatus, togglePolicyBookmark } from "../bookmarks/bookmarks-data";
 
 type PolicyStatus = "DRAFT" | "UNDER_REVIEW" | "PUBLISHED" | "ARCHIVED";
 type PolicyType = "POLICY" | "GUIDELINE" | "PROCEDURE";
@@ -112,6 +113,26 @@ function getApiBaseCandidates() {
   return [normalizeApiBaseUrl(getApiBaseUrl())];
 }
 
+function getRequestErrorMessage(responseText: string, status: number) {
+  try {
+    const errorBody = JSON.parse(responseText) as { message?: string | string[] };
+    const message = errorBody.message;
+
+    if (Array.isArray(message)) {
+      const joined = message.filter((item) => typeof item === "string" && item.trim()).join(" ");
+      if (joined) {
+        return joined;
+      }
+    } else if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  } catch {
+    // Use the raw response body when it is not JSON.
+  }
+
+  return responseText.trim() || `Request failed with status ${status}`;
+}
+
 async function requestJson<T>(path: string) {
   let lastError: Error | null = null;
 
@@ -121,13 +142,7 @@ async function requestJson<T>(path: string) {
 
       if (!response.ok) {
         const responseText = await response.text();
-
-        try {
-          const errorBody = JSON.parse(responseText) as { message?: string };
-          throw new Error(errorBody.message ?? `Request failed with status ${response.status}`);
-        } catch {
-          throw new Error(responseText || `Request failed with status ${response.status}`);
-        }
+        throw new Error(getRequestErrorMessage(responseText, response.status));
       }
 
       return {
@@ -234,7 +249,9 @@ type PersistedReadingProgress = {
 };
 
 function getReadingProgressStorageKey(policyId: string) {
-  return `hinora_reading_progress:${policyId}`;
+  const identity = getSessionUserIdentity();
+  const owner = identity?.userId || identity?.email || "anon";
+  return `hinora_reading_progress:${owner}:${policyId}`;
 }
 
 function loadPersistedReadingProgress(policyId: string): PersistedReadingProgress | null {
@@ -324,7 +341,7 @@ async function persistRemoteReadingProgress(
   const identity = getSessionUserIdentity();
 
   if (!identity) {
-    return;
+    return false;
   }
 
   const body = {
@@ -343,16 +360,19 @@ async function persistRemoteReadingProgress(
         headers: {
           "Content-Type": "application/json",
         },
+        keepalive: true,
         body: JSON.stringify(body),
       });
 
       if (response.ok) {
-        return;
+        return true;
       }
     } catch {
       // Try next candidate.
     }
   }
+
+  return false;
 }
 
 function formatStatusLabel(status: PolicyStatus) {
@@ -391,8 +411,13 @@ function getStatusTone(status: PolicyStatus) {
   return "bg-violet-50 text-[var(--color-ai-accent)]";
 }
 
-function getPolicyFileUrl(policyId: string, apiBaseUrl: string) {
-  return `${apiBaseUrl}/policies/${policyId}/file`;
+function getPolicyFileUrl(policyId: string, apiBaseUrl: string, userId?: string) {
+  const params = new URLSearchParams({ assignedToMe: "1" });
+  if (userId) {
+    params.set("userId", userId);
+  }
+
+  return `${apiBaseUrl}/policies/${policyId}/file?${params.toString()}`;
 }
 
 function getReaderHref(mode: "admin" | "employee", policyId: string) {
@@ -543,7 +568,11 @@ function getListenModeText(policy: PolicyRecord, summaryHighlights: string[]) {
     .join(". ");
 }
 
-export default function PolicyReaderExperience({
+export default function PolicyReaderExperience(props: PolicyReaderExperienceProps) {
+  return <PolicyReaderExperienceInner key={props.policyId} {...props} />;
+}
+
+function PolicyReaderExperienceInner({
   mode,
   policyId,
   profileName,
@@ -561,48 +590,82 @@ export default function PolicyReaderExperience({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [readingProgress, setReadingProgress] = useState(0);
-  const [pagesViewed, setPagesViewed] = useState(0);
-  const [scrollDepthPercent, setScrollDepthPercent] = useState(0);
-  const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
+  const [initialReading] = useState(() => loadPersistedReadingProgress(policyId));
+  const [pagesViewed, setPagesViewed] = useState(initialReading?.pagesViewed ?? 0);
+  const [scrollDepthPercent, setScrollDepthPercent] = useState(initialReading?.scrollDepthPercent ?? 0);
+  const [timeSpentSeconds, setTimeSpentSeconds] = useState(initialReading?.timeSpentSeconds ?? 0);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>("summary");
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const documentViewerRef = useRef<HTMLDivElement | null>(null);
   const readingSignalsRef = useRef({
-    timeSpentSeconds: 0,
-    scrollDepthPercent: 0,
-    pagesViewed: 0,
+    timeSpentSeconds: initialReading?.timeSpentSeconds ?? 0,
+    scrollDepthPercent: initialReading?.scrollDepthPercent ?? 0,
+    pagesViewed: initialReading?.pagesViewed ?? 0,
     isDocumentInView: false,
     isPointerOverDocument: false,
   });
 
-  const loadPolicy = useCallback(async () => {
-    setIsLoading(true);
+  useEffect(() => {
+    let cancelled = false;
 
-    try {
-      const { data, apiBaseUrl } = await requestJson<PolicyDetailResponse>(`/policies/${policyId}`);
-      setPolicyResponse({
-        data: normalizePolicyRecord(data.data),
-        relatedPolicies: (data.relatedPolicies ?? []).map((relatedPolicy) =>
-          normalizePolicyRecord(relatedPolicy),
-        ),
-      });
-      setResolvedApiBaseUrl(apiBaseUrl);
-      setErrorMessage("");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to load this policy.");
-    } finally {
-      setIsLoading(false);
-    }
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ assignedToMe: "1" });
+        const identity = getSessionUserIdentity();
+        if (identity?.userId) {
+          params.set("userId", identity.userId);
+        }
+
+        const { data, apiBaseUrl } = await requestJson<PolicyDetailResponse>(
+          `/policies/${policyId}?${params.toString()}`,
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setPolicyResponse({
+          data: normalizePolicyRecord(data.data),
+          relatedPolicies: (data.relatedPolicies ?? []).map((relatedPolicy) =>
+            normalizePolicyRecord(relatedPolicy),
+          ),
+        });
+        setResolvedApiBaseUrl(apiBaseUrl);
+        setErrorMessage("");
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setErrorMessage(error instanceof Error ? error.message : "Unable to load this policy.");
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [policyId]);
 
   useEffect(() => {
-    void loadPolicy();
-  }, [loadPolicy]);
+    let cancelled = false;
+    void fetchBookmarkStatus(policyId)
+      .then((payload) => {
+        if (!cancelled) setIsBookmarked(payload.bookmarked);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [policyId]);
 
   const policy = policyResponse?.data ?? null;
   const relatedPolicies = policyResponse?.relatedPolicies ?? [];
   const documentUrl = policy
-    ? getPolicyFileUrl(policy.id, resolvedApiBaseUrl)
+    ? getPolicyFileUrl(policy.id, resolvedApiBaseUrl, getSessionUserIdentity()?.userId)
     : "";
   const canPreviewPdf = Boolean(
     policy && policy.fileType.toLowerCase().includes("pdf"),
@@ -610,6 +673,20 @@ export default function PolicyReaderExperience({
 
   const summaryHighlights = useMemo(() => (policy ? getSummaryHighlights(policy) : []), [policy]);
   const suggestedQuestions = useMemo(() => (policy ? getSuggestedQuestions(policy) : []), [policy]);
+  const chatThread = useMemo(() => {
+    if (!policy) {
+      return chatMessages;
+    }
+
+    return [
+      {
+        id: `${policy.id}-welcome`,
+        role: "assistant" as const,
+        content: `You are reading ${policy.title}. Ask for a summary, department coverage, category, status, or the main purpose of this document.`,
+      },
+      ...chatMessages,
+    ];
+  }, [policy, chatMessages]);
   const estimatedReadingMinutes = policy ? getEstimatedReadingMinutes(policy) : 12;
   const estimatedPages = policy ? getEstimatedPageCount(policy) : 8;
   const requiredActiveSeconds = Math.max(90, Math.round(estimatedReadingMinutes * 60 * 0.55));
@@ -618,19 +695,14 @@ export default function PolicyReaderExperience({
     ? 0
     : Math.max(1, Math.ceil(estimatedReadingMinutes * ((100 - readingProgress) / 100)));
 
-  useEffect(() => {
-    if (!policy) {
-      return;
+  async function handleToggleBookmark() {
+    try {
+      const next = await togglePolicyBookmark(policyId, isBookmarked);
+      setIsBookmarked(next);
+    } catch {
+      // Keep the previous bookmark state if the request fails.
     }
-
-    setChatMessages([
-      {
-        id: `${policy.id}-welcome`,
-        role: "assistant",
-        content: `You are reading ${policy.title}. Ask for a summary, department coverage, category, status, or the main purpose of this document.`,
-      },
-    ]);
-  }, [policy]);
+  }
 
   useEffect(() => {
     return () => {
@@ -643,27 +715,6 @@ export default function PolicyReaderExperience({
   useEffect(() => {
     let cancelled = false;
 
-    setIsBookmarked(false);
-    setActiveWorkspaceTab("summary");
-    setSummaryExpanded(false);
-
-    const localSaved = loadPersistedReadingProgress(policyId);
-    const localTime = localSaved?.timeSpentSeconds ?? 0;
-    const localScroll = localSaved?.scrollDepthPercent ?? 0;
-    const localPages = localSaved?.pagesViewed ?? 0;
-
-    setTimeSpentSeconds(localTime);
-    setScrollDepthPercent(localScroll);
-    setPagesViewed(localPages);
-    setReadingProgress(0);
-    readingSignalsRef.current = {
-      timeSpentSeconds: localTime,
-      scrollDepthPercent: localScroll,
-      pagesViewed: localPages,
-      isDocumentInView: false,
-      isPointerOverDocument: false,
-    };
-
     void (async () => {
       const remote = await fetchRemoteReadingProgress(policyId);
 
@@ -671,9 +722,9 @@ export default function PolicyReaderExperience({
         return;
       }
 
-      const mergedTime = Math.max(localTime, remote.timeSpentSeconds);
-      const mergedScroll = Math.max(localScroll, remote.scrollDepthPercent);
-      const mergedPages = Math.max(localPages, remote.pagesViewed);
+      const mergedTime = Math.max(readingSignalsRef.current.timeSpentSeconds, remote.timeSpentSeconds);
+      const mergedScroll = Math.max(readingSignalsRef.current.scrollDepthPercent, remote.scrollDepthPercent);
+      const mergedPages = Math.max(readingSignalsRef.current.pagesViewed, remote.pagesViewed);
 
       readingSignalsRef.current.timeSpentSeconds = mergedTime;
       readingSignalsRef.current.scrollDepthPercent = mergedScroll;
@@ -719,12 +770,15 @@ export default function PolicyReaderExperience({
         return;
       }
 
-      lastSavedSnapshot = snapshot;
       void persistRemoteReadingProgress(activePolicyId, {
         progressPercent,
         pagesViewed: signals.pagesViewed,
         scrollDepthPercent: signals.scrollDepthPercent,
         timeSpentSeconds: signals.timeSpentSeconds,
+      }).then((saved) => {
+        if (saved) {
+          lastSavedSnapshot = snapshot;
+        }
       });
     }
 
@@ -733,10 +787,14 @@ export default function PolicyReaderExperience({
         window.clearTimeout(saveTimer);
       }
 
-      // Debounce DB writes while still keeping a local cache for instant restore.
+      if (!lastSavedSnapshot) {
+        flushRemoteProgress(progressPercent);
+        return;
+      }
+
       saveTimer = window.setTimeout(() => {
         flushRemoteProgress(progressPercent);
-      }, 2500);
+      }, 800);
 
       if (progressPercent >= 100) {
         if (saveTimer !== null) {
@@ -897,10 +955,25 @@ export default function PolicyReaderExperience({
       publishProgress();
     }, 1000);
 
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        const hiddenProgress = computeReadingProgress({
+          timeSpentSeconds: signals.timeSpentSeconds,
+          scrollDepthPercent: signals.scrollDepthPercent,
+          pagesViewed: signals.pagesViewed,
+          estimatedPages,
+          requiredActiveSeconds,
+        });
+        flushRemoteProgress(hiddenProgress);
+      }
+    }
+
     window.addEventListener("scroll", handleScroll, { passive: true });
     window.addEventListener("resize", handleScroll);
     window.addEventListener("wheel", handleWheel, { passive: true });
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handleVisibilityChange);
     updateScrollDepth();
     publishProgress();
 
@@ -911,6 +984,8 @@ export default function PolicyReaderExperience({
       window.removeEventListener("resize", handleScroll);
       window.removeEventListener("wheel", handleWheel);
       window.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handleVisibilityChange);
 
       if (saveTimer !== null) {
         window.clearTimeout(saveTimer);
@@ -939,12 +1014,11 @@ export default function PolicyReaderExperience({
     }
 
     const answer = buildAskHinoraAnswer(policy, trimmedQuestion);
-    const timestamp = Date.now();
 
     setChatMessages((current) => [
       ...current,
-      { id: `user-${timestamp}`, role: "user", content: trimmedQuestion },
-      { id: `assistant-${timestamp}`, role: "assistant", content: answer },
+      { id: `user-${current.length}`, role: "user", content: trimmedQuestion },
+      { id: `assistant-${current.length}`, role: "assistant", content: answer },
     ]);
     setQuestionInput("");
   }
@@ -1075,7 +1149,7 @@ export default function PolicyReaderExperience({
                   )}
                   <button
                     type="button"
-                    onClick={() => setIsBookmarked((current) => !current)}
+                    onClick={() => void handleToggleBookmark()}
                     aria-label={isBookmarked ? "Remove bookmark" : "Add bookmark"}
                     className={cx(
                       "inline-flex h-11 w-11 items-center justify-center rounded-xl border transition",
@@ -1348,7 +1422,7 @@ export default function PolicyReaderExperience({
                     </div>
 
                     <div className="max-h-[180px] space-y-2.5 overflow-y-auto rounded-xl bg-slate-50 px-3 py-3">
-                      {chatMessages.map((message) => (
+                      {chatThread.map((message) => (
                         <div
                           key={message.id}
                           className={cx(
@@ -1481,7 +1555,7 @@ export default function PolicyReaderExperience({
                   <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                     <button
                       type="button"
-                      onClick={() => setIsBookmarked((current) => !current)}
+                      onClick={() => void handleToggleBookmark()}
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       <Bookmark className={cx("h-4.5 w-4.5", isBookmarked && "fill-current text-[var(--color-warning)]")} />

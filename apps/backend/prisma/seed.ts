@@ -142,6 +142,9 @@ const rolePermissionMap: Record<
     'Assessment Builder',
     'Reports',
     'Audit Logs',
+    'My Compliance',
+    'Bookmarks',
+    'Notifications',
   ]),
   'Compliance Officer': buildRolePermissions([
     'Dashboard',
@@ -151,6 +154,7 @@ const rolePermissionMap: Record<
     'Compliance Center',
     'Reports',
     'Audit Logs',
+    'My Compliance',
     'Notifications',
   ]),
   Auditor: buildRolePermissions([
@@ -159,6 +163,7 @@ const rolePermissionMap: Record<
     'Compliance Center',
     'Reports',
     'Audit Logs',
+    'My Compliance',
   ]),
   'HR Officer': buildRolePermissions([
     'Dashboard',
@@ -167,6 +172,8 @@ const rolePermissionMap: Record<
     'Reports',
     'Users',
     'Departments',
+    'My Compliance',
+    'Notifications',
   ]),
   'Department Head': buildRolePermissions([
     'Dashboard',
@@ -187,10 +194,15 @@ const rolePermissionMap: Record<
     'Reports',
     'Audit Logs',
     'Settings',
+    'My Compliance',
+    'Bookmarks',
+    'Notifications',
   ]),
   User: buildRolePermissions([
     'Dashboard',
     'Policy Library',
+    'Departments',
+    'Location',
     'My Compliance',
     'Bookmarks',
     'Notifications',
@@ -868,6 +880,48 @@ async function main() {
         isActive: policy.status !== PolicyStatus.ARCHIVED,
       },
     });
+  }
+
+  if (johnId) {
+    const collectionNames = ['Compliance', 'Security', 'Training'] as const;
+    const collectionsByName = new Map<string, string>();
+
+    for (const name of collectionNames) {
+      const collection = await prisma.bookmarkCollection.upsert({
+        where: { userId_name: { userId: johnId, name } },
+        update: {},
+        create: { userId: johnId, name },
+      });
+      collectionsByName.set(name, collection.id);
+    }
+
+    const bookmarkSeeds: Array<{ filePath: string; collection: (typeof collectionNames)[number] | null }> = [
+      { filePath: '/seed/policies/information-security-policy.pdf', collection: 'Security' },
+      { filePath: '/seed/policies/vulnerability-management-policy.pdf', collection: 'Security' },
+      { filePath: '/seed/policies/access-provisioning-standard.pdf', collection: 'Training' },
+      { filePath: '/seed/policies/endpoint-protection-procedure.pdf', collection: null },
+      { filePath: '/seed/policies/compliance-monitoring-policy.pdf', collection: 'Compliance' },
+    ];
+
+    for (const seed of bookmarkSeeds) {
+      const policy = await prisma.policy.findUnique({
+        where: { filePath: seed.filePath },
+        select: { id: true },
+      });
+      if (!policy) continue;
+
+      await prisma.policyBookmark.upsert({
+        where: { userId_policyId: { userId: johnId, policyId: policy.id } },
+        update: {
+          collectionId: seed.collection ? collectionsByName.get(seed.collection) ?? null : null,
+        },
+        create: {
+          userId: johnId,
+          policyId: policy.id,
+          collectionId: seed.collection ? collectionsByName.get(seed.collection) ?? null : null,
+        },
+      });
+    }
   }
 }
 

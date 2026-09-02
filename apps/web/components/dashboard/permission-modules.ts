@@ -57,9 +57,9 @@ export const permissionModules: readonly PermissionModuleDefinition[] = [
   },
   { key: "Audit Logs", label: "Audit Logs", section: "ADMINISTRATION", audience: "admin", Icon: ScrollText },
   { key: "Settings", label: "Settings", section: "ACCOUNT", audience: "both", Icon: Settings },
-  { key: "My Compliance", label: "My Compliance", section: "MY COMPLIANCE", audience: "employee", Icon: Shield },
+  { key: "My Compliance", label: "My Compliance", section: "MY COMPLIANCE", audience: "both", Icon: Shield },
   { key: "Bookmarks", label: "Bookmarks", section: "MY COMPLIANCE", audience: "employee", Icon: Bookmark },
-  { key: "Notifications", label: "Notifications", section: "MY COMPLIANCE", audience: "employee", Icon: Bell },
+  { key: "Notifications", label: "Notifications", section: "MY COMPLIANCE", audience: "both", Icon: Bell },
 ] as const;
 
 export const moduleOrder = permissionModules.map((module) => module.key);

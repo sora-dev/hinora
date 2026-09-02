@@ -9,7 +9,6 @@ import {
   ArrowRight,
   ArrowUpRight,
   Award,
-  Ban,
   Bell,
   BookOpenText,
   Calendar,
@@ -28,16 +27,11 @@ import {
   Filter,
   Globe,
   Mail,
-  MessageSquare,
   Monitor,
   MoreVertical,
-  PencilLine,
-  Plus,
   Search,
   Send,
   Shield,
-  Smartphone,
-  Sparkles,
   TrendingUp,
   UserPlus,
   UserRound,
@@ -54,11 +48,26 @@ import { DropdownSelect } from "../ui/dropdown-select";
 import { EmptyState } from "../ui/empty-state";
 import { ModuleGuide } from "../dashboard/module-guide";
 import { API_BASE_URL } from "../../lib/api-base-url";
+import ComplianceNotificationsTab from "./compliance-notifications";
+import ComplianceCertificatesTab from "./compliance-certificates";
+import {
+  fetchComplianceAssessment,
+  fetchComplianceEmployees,
+  fetchComplianceOverview,
+  fetchComplianceSummaries,
+  formatComplianceDate,
+  sharePct,
+  type ComplianceActivityKind,
+  type ComplianceAssessment,
+  type ComplianceEmployee,
+  type ComplianceOverview,
+  type ComplianceSummary,
+  type EmployeeStatus,
+} from "./compliance-data";
 
 type PolicyTrackStatus = "ON_TRACK" | "AT_RISK" | "OVERDUE" | "NOT_STARTED";
 type PolicyLifecycleStatus = "DRAFT" | "UNDER_REVIEW" | "PUBLISHED" | "ARCHIVED";
 type PolicyDocumentType = "POLICY" | "GUIDELINE" | "PROCEDURE";
-type EmployeeStatus = "COMPLETED" | "PENDING" | "OVERDUE" | "NOT_STARTED";
 type DetailTab =
   | "overview"
   | "employees"
@@ -122,6 +131,10 @@ type PolicyListItem = {
   status: PolicyTrackStatus;
   policyStatus: PolicyLifecycleStatus;
   isActive: boolean;
+  assigned: number;
+  completed: number;
+  pending: number;
+  overdue: number;
   completionPct: number;
   department: string;
   categoryName: string | null;
@@ -169,12 +182,21 @@ function policyTypeIcon(type: PolicyDocumentType): LucideIcon {
   return Shield;
 }
 
-/** Temporary track status until assignment/compliance metrics are wired. */
-function toTrackStatus(status: PolicyLifecycleStatus): PolicyTrackStatus {
-  if (status === "PUBLISHED") return "ON_TRACK";
-  if (status === "UNDER_REVIEW") return "AT_RISK";
-  if (status === "ARCHIVED") return "OVERDUE";
-  return "NOT_STARTED";
+function applyComplianceSummary(
+  policy: PolicyListItem,
+  summary?: ComplianceSummary,
+): PolicyListItem {
+  if (!summary) return policy;
+  return {
+    ...policy,
+    dueAt: formatComplianceDate(summary.dueAt),
+    status: summary.status,
+    assigned: summary.assigned,
+    completed: summary.completed,
+    pending: summary.pending,
+    overdue: summary.overdue,
+    completionPct: summary.completionPct,
+  };
 }
 
 function mapApiPolicyToListItem(policy: ApiPolicyRecord): PolicyListItem {
@@ -184,9 +206,13 @@ function mapApiPolicyToListItem(policy: ApiPolicyRecord): PolicyListItem {
     version: String(policy.version ?? 1),
     publishedAt: formatPolicyDate(policy.createdAt),
     dueAt: "Not set",
-    status: toTrackStatus(policy.status),
+    status: "NOT_STARTED",
     policyStatus: policy.status,
     isActive: policy.isActive ?? policy.status === "PUBLISHED",
+    assigned: 0,
+    completed: 0,
+    pending: 0,
+    overdue: 0,
     completionPct: 0,
     department: policy.department,
     categoryName: policy.category?.name ?? null,
@@ -211,133 +237,169 @@ async function fetchPolicies(filters: PolicyFetchFilters = {}): Promise<{
     params.set("categoryId", filters.categoryId);
   }
 
-  const response = await fetch(`${API_BASE_URL}/policies?${params.toString()}`);
+  const [response, summaries] = await Promise.all([
+    fetch(`${API_BASE_URL}/policies?${params.toString()}`),
+    fetchComplianceSummaries().catch(() => [] as ComplianceSummary[]),
+  ]);
   if (!response.ok) {
     const errorBody = (await response.json().catch(() => null)) as { message?: string } | null;
     throw new Error(errorBody?.message ?? "Unable to load policies.");
   }
 
   const payload = (await response.json()) as PoliciesListResponse;
+  const summaryByPolicy = new Map(summaries.map((summary) => [summary.policyId, summary]));
+
   return {
-    policies: (payload.data ?? []).map(mapApiPolicyToListItem),
+    policies: (payload.data ?? []).map((policy) =>
+      applyComplianceSummary(mapApiPolicyToListItem(policy), summaryByPolicy.get(policy.id)),
+    ),
     categories: payload.filters?.categories ?? [],
   };
 }
 
-const MOCK_EMPLOYEES: EmployeeRow[] = [
-  {
-    id: "e1",
-    name: "Maria Santos",
-    email: "maria.santos@hinora.com",
-    initials: "MS",
-    avatarClassName: "bg-blue-100 text-[var(--color-active-menu)]",
-    department: "Operations",
-    location: "Head Office",
-    status: "COMPLETED",
-    completionPct: 100,
-    assessmentScore: 92,
-    dueAt: "Aug 30, 2026",
-    dueHint: "Completed on time",
-    dueHintTone: "muted",
-    lastActivity: "Aug 01, 2026 2:14 PM",
-  },
-  {
-    id: "e2",
-    name: "Juan Dela Cruz",
-    email: "juan.delacruz@hinora.com",
-    initials: "JD",
-    avatarClassName: "bg-violet-100 text-[var(--color-ai-accent)]",
-    department: "IT Department",
-    location: "Head Office",
-    status: "COMPLETED",
-    completionPct: 100,
-    assessmentScore: 88,
-    dueAt: "Aug 30, 2026",
-    dueHint: "Completed on time",
-    dueHintTone: "muted",
-    lastActivity: "Jul 29, 2026 10:05 AM",
-  },
-  {
-    id: "e3",
-    name: "Ana Reyes",
-    email: "ana.reyes@hinora.com",
-    initials: "AR",
-    avatarClassName: "bg-emerald-100 text-[var(--color-success)]",
-    department: "Finance",
-    location: "Baguio",
-    status: "PENDING",
-    completionPct: 60,
-    assessmentScore: null,
-    dueAt: "Aug 30, 2026",
-    dueHint: "Due in 14 days",
-    dueHintTone: "info",
-    lastActivity: "Aug 03, 2026 4:42 PM",
-  },
-  {
-    id: "e4",
-    name: "Carlo Mendoza",
-    email: "carlo.mendoza@hinora.com",
-    initials: "CM",
-    avatarClassName: "bg-amber-100 text-[var(--color-warning)]",
-    department: "Human Resources",
-    location: "La Trinidad",
-    status: "OVERDUE",
-    completionPct: 25,
-    assessmentScore: null,
-    dueAt: "Jul 20, 2026",
-    dueHint: "Overdue by 5 days",
-    dueHintTone: "danger",
-    lastActivity: "Jul 12, 2026 9:18 AM",
-  },
-  {
-    id: "e5",
-    name: "Liza Garcia",
-    email: "liza.garcia@hinora.com",
-    initials: "LG",
-    avatarClassName: "bg-rose-100 text-rose-600",
-    department: "Compliance",
-    location: "Head Office",
-    status: "PENDING",
-    completionPct: 40,
-    assessmentScore: null,
-    dueAt: "Aug 30, 2026",
-    dueHint: "Due in 14 days",
-    dueHintTone: "info",
-    lastActivity: "Aug 04, 2026 11:30 AM",
-  },
-  {
-    id: "e6",
-    name: "Mark Villanueva",
-    email: "mark.villanueva@hinora.com",
-    initials: "MV",
-    avatarClassName: "bg-cyan-100 text-cyan-700",
-    department: "Operations",
-    location: "Baguio",
-    status: "COMPLETED",
-    completionPct: 100,
-    assessmentScore: 95,
-    dueAt: "Aug 30, 2026",
-    dueHint: "Completed on time",
-    dueHintTone: "muted",
-    lastActivity: "Jul 30, 2026 3:55 PM",
-  },
-  {
-    id: "e7",
-    name: "Sofia Ramos",
-    email: "sofia.ramos@hinora.com",
-    initials: "SR",
-    avatarClassName: "bg-slate-100 text-slate-600",
-    department: "Legal",
-    location: "Head Office",
-    status: "NOT_STARTED",
-    completionPct: 0,
-    assessmentScore: null,
-    dueAt: "Aug 30, 2026",
-    dueHint: "Due in 14 days",
-    dueHintTone: "info",
-    lastActivity: "—",
-  },
+const EMPLOYEE_AVATAR_TONES = [
+  "bg-blue-100 text-[var(--color-active-menu)]",
+  "bg-violet-100 text-[var(--color-ai-accent)]",
+  "bg-emerald-100 text-[var(--color-success)]",
+  "bg-amber-100 text-[var(--color-warning)]",
+  "bg-rose-100 text-rose-600",
+  "bg-cyan-100 text-cyan-700",
+  "bg-slate-100 text-slate-600",
 ];
+
+function employeeAvatarTone(id: string) {
+  let hash = 0;
+  for (const character of id) {
+    hash = (hash + character.charCodeAt(0)) % EMPLOYEE_AVATAR_TONES.length;
+  }
+  return EMPLOYEE_AVATAR_TONES[hash] ?? EMPLOYEE_AVATAR_TONES[0];
+}
+
+function formatLastActivity(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function daysFromToday(value: string) {
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDay = new Date(target);
+  dueDay.setHours(0, 0, 0, 0);
+  return Math.round((dueDay.getTime() - today.getTime()) / 86_400_000);
+}
+
+function employeeDueHint(
+  employee: ComplianceEmployee,
+): Pick<EmployeeRow, "dueHint" | "dueHintTone"> {
+  if (employee.status === "COMPLETED") {
+    if (
+      employee.completedAt &&
+      employee.dueAt &&
+      new Date(employee.completedAt) > new Date(employee.dueAt)
+    ) {
+      return { dueHint: "Completed late", dueHintTone: "danger" };
+    }
+    return { dueHint: "Completed on time", dueHintTone: "muted" };
+  }
+  if (!employee.dueAt) {
+    return { dueHint: "No due date", dueHintTone: "muted" };
+  }
+  const days = daysFromToday(employee.dueAt);
+  if (employee.status === "OVERDUE" || days < 0) {
+    const overdueBy = Math.abs(days);
+    return {
+      dueHint: overdueBy === 1 ? "Overdue by 1 day" : `Overdue by ${overdueBy} days`,
+      dueHintTone: "danger",
+    };
+  }
+  if (days === 0) {
+    return { dueHint: "Due today", dueHintTone: "info" };
+  }
+  return {
+    dueHint: days === 1 ? "Due in 1 day" : `Due in ${days} days`,
+    dueHintTone: "info",
+  };
+}
+
+function mapEmployeeToRow(employee: ComplianceEmployee): EmployeeRow {
+  const hint = employeeDueHint(employee);
+  return {
+    id: employee.id,
+    name: employee.name,
+    email: employee.email,
+    initials: employee.initials,
+    avatarClassName: employeeAvatarTone(employee.id),
+    department: employee.department,
+    location: employee.location,
+    status: employee.status,
+    completionPct: employee.completionPct,
+    assessmentScore: employee.assessmentScore,
+    dueAt: formatComplianceDate(employee.dueAt),
+    dueHint: hint.dueHint,
+    dueHintTone: hint.dueHintTone,
+    lastActivity: formatLastActivity(employee.lastActivityAt),
+  };
+}
+
+function visiblePageNumbers(current: number, total: number) {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, index) => index + 1);
+  }
+  const pages = new Set([1, total, current, current - 1, current + 1]);
+  return [...pages].filter((page) => page >= 1 && page <= total).sort((left, right) => left - right);
+}
+
+function exportEmployeesCsv(rows: EmployeeRow[], policyTitle: string) {
+  const header = [
+    "Name",
+    "Email",
+    "Department",
+    "Location",
+    "Status",
+    "Completion",
+    "Assessment Score",
+    "Due Date",
+    "Due Hint",
+    "Last Activity",
+  ];
+  const lines = [
+    header.join(","),
+    ...rows.map((row) =>
+      [
+        row.name,
+        row.email,
+        row.department,
+        row.location,
+        employeeStatusLabel(row.status),
+        `${row.completionPct}%`,
+        row.assessmentScore != null ? `${row.assessmentScore}%` : "",
+        row.dueAt,
+        row.dueHint,
+        row.lastActivity,
+      ]
+        .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+        .join(","),
+    ),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `${policyTitle.replace(/[^\w]+/g, "-").toLowerCase()}-employees-${stamp}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -513,6 +575,38 @@ function OverviewPanelCard({
   );
 }
 
+function activityPresentation(kind: ComplianceActivityKind) {
+  if (kind === "completed") {
+    return { Icon: CheckCircle2, tone: "bg-emerald-50 text-[var(--color-success)]" };
+  }
+  if (kind === "assessment") {
+    return { Icon: ClipboardCheck, tone: "bg-blue-50 text-[var(--color-active-menu)]" };
+  }
+  if (kind === "assignment") {
+    return { Icon: UserPlus, tone: "bg-amber-50 text-[var(--color-warning)]" };
+  }
+  if (kind === "published") {
+    return { Icon: FileUp, tone: "bg-violet-50 text-[var(--color-ai-accent)]" };
+  }
+  return { Icon: Bell, tone: "bg-slate-100 text-slate-500" };
+}
+
+function overviewStatusCopy(overview: ComplianceOverview) {
+  if (overview.assigned === 0) {
+    return "This policy is not assigned to anyone yet.";
+  }
+  if (overview.status === "ON_TRACK") {
+    return "Most assigned employees are on track to complete this policy.";
+  }
+  if (overview.status === "AT_RISK") {
+    return "Several assigned employees need attention before the due date.";
+  }
+  if (overview.status === "OVERDUE") {
+    return "This policy has overdue assignments that need follow-up.";
+  }
+  return "Assigned employees have not started this policy yet.";
+}
+
 function OverviewTab({
   policy,
   onOpenTab,
@@ -520,49 +614,85 @@ function OverviewTab({
   policy: PolicyListItem;
   onOpenTab: (tab: DetailTab) => void;
 }) {
-  const completed = Math.round((policy.completionPct / 100) * 200);
-  const pending = policy.status === "NOT_STARTED" ? 0 : Math.max(0, Math.round(200 * 0.09));
-  const overdue = policy.status === "OVERDUE" ? Math.max(8, 200 - completed - pending) : Math.round(200 * 0.04);
-  const averageScore = policy.status === "NOT_STARTED" ? 0 : 92;
-  const statusCopy =
-    policy.status === "ON_TRACK"
-      ? "Most employees are on track to complete this policy."
-      : policy.status === "AT_RISK"
-        ? "Several employees need attention before the due date."
-        : policy.status === "OVERDUE"
-          ? "This policy has overdue assignments that need follow-up."
-          : "No employees have started this policy yet.";
+  const [overview, setOverview] = useState<ComplianceOverview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const activity = [
-    {
-      title: "Acknowledgement Completed",
-      detail: "Maria Santos",
-      time: "2h ago",
-      Icon: CheckCircle2,
-      tone: "bg-emerald-50 text-[var(--color-success)]",
-    },
-    {
-      title: "Reminder Sent",
-      detail: "18 pending employees",
-      time: "1d ago",
-      Icon: Bell,
-      tone: "bg-amber-50 text-[var(--color-warning)]",
-    },
-    {
-      title: "Due Date Extended",
-      detail: "Aug 25 → Aug 30 by Admin User",
-      time: "3d ago",
-      Icon: CalendarClock,
-      tone: "bg-blue-50 text-[var(--color-active-menu)]",
-    },
-    {
-      title: "Policy Published",
-      detail: `Version ${policy.version}`,
-      time: policy.publishedAt,
-      Icon: FileUp,
-      tone: "bg-violet-50 text-[var(--color-ai-accent)]",
-    },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    setOverview(null);
+
+    void fetchComplianceOverview(policy.id)
+      .then((data) => {
+        if (!cancelled) {
+          setOverview(data);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unable to load overview.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [policy.id]);
+
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void fetchComplianceOverview(policy.id)
+        .then((data) => setOverview(data))
+        .catch(() => undefined);
+    }
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [policy.id]);
+
+  if (loading) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-56 animate-pulse rounded-2xl border border-slate-200 bg-slate-50"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (error || !overview) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Unable to load overview"
+        description={error || "Compliance metrics are unavailable for this policy."}
+      />
+    );
+  }
+
+  const assigned = overview.assigned;
+  const completed = overview.completed;
+  const pending = overview.pending;
+  const overdue = overview.overdue;
+  const averageScore = overview.averageScore;
+  const statusCopy = overviewStatusCopy(overview);
 
   return (
     <div className="space-y-4">
@@ -572,13 +702,13 @@ function OverviewTab({
             Completion Rate
           </div>
           <div className="mt-4 flex items-center justify-center">
-            <DonutChart value={policy.completionPct} color="var(--color-active-menu)">
-              <div className="text-2xl font-extrabold text-slate-900">{policy.completionPct}%</div>
+            <DonutChart value={overview.completionPct} color="var(--color-active-menu)">
+              <div className="text-2xl font-extrabold text-slate-900">{overview.completionPct}%</div>
               <div className="text-[0.7rem] font-semibold text-slate-500">Completed</div>
             </DonutChart>
           </div>
           <div className="mt-3 text-center text-sm font-semibold text-slate-600">
-            {completed} of 200
+            {assigned === 0 ? "No employees assigned" : `${completed} of ${assigned}`}
           </div>
         </article>
 
@@ -590,7 +720,7 @@ function OverviewTab({
             </span>
           </div>
           <div className="mt-3">
-            <div className="text-3xl font-extrabold text-slate-900">200</div>
+            <div className="text-3xl font-extrabold text-slate-900">{assigned}</div>
             <div className="text-sm font-semibold text-slate-500">Total Assigned</div>
           </div>
           <ul className="mt-4 space-y-2.5">
@@ -598,19 +728,19 @@ function OverviewTab({
               {
                 label: "Completed",
                 count: completed,
-                pct: policy.completionPct,
+                pct: sharePct(completed, assigned),
                 tone: "bg-[var(--color-success)]",
               },
               {
                 label: "Pending",
                 count: pending,
-                pct: 9,
+                pct: sharePct(pending, assigned),
                 tone: "bg-[var(--color-warning)]",
               },
               {
                 label: "Overdue",
                 count: overdue,
-                pct: 4,
+                pct: sharePct(overdue, assigned),
                 tone: "bg-[var(--color-error)]",
               },
             ].map((item) => (
@@ -631,13 +761,17 @@ function OverviewTab({
         <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
           <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Assessment</div>
           <div className="mt-4 flex items-center justify-center">
-            <DonutChart value={averageScore} color="var(--color-success)">
-              <div className="text-2xl font-extrabold text-slate-900">{averageScore}%</div>
+            <DonutChart value={overview.hasAssessment ? averageScore : 0} color="var(--color-success)">
+              <div className="text-2xl font-extrabold text-slate-900">
+                {overview.hasAssessment ? `${averageScore}%` : "—"}
+              </div>
               <div className="text-[0.7rem] font-semibold text-slate-500">Avg Score</div>
             </DonutChart>
           </div>
           <div className="mt-3 text-center text-sm font-semibold text-[var(--color-success)]">
-            Passing Score: 80%
+            {overview.hasAssessment
+              ? `Passing Score: ${overview.passingScore}%`
+              : "No assessment attached"}
           </div>
         </article>
 
@@ -647,22 +781,22 @@ function OverviewTab({
             <span
               className={cx(
                 "inline-flex h-14 w-14 items-center justify-center rounded-full",
-                policy.status === "ON_TRACK" && "bg-emerald-50 text-[var(--color-success)]",
-                policy.status === "AT_RISK" && "bg-amber-50 text-[var(--color-warning)]",
-                policy.status === "OVERDUE" && "bg-red-50 text-[var(--color-error)]",
-                policy.status === "NOT_STARTED" && "bg-slate-100 text-slate-500",
+                overview.status === "ON_TRACK" && "bg-emerald-50 text-[var(--color-success)]",
+                overview.status === "AT_RISK" && "bg-amber-50 text-[var(--color-warning)]",
+                overview.status === "OVERDUE" && "bg-red-50 text-[var(--color-error)]",
+                overview.status === "NOT_STARTED" && "bg-slate-100 text-slate-500",
               )}
             >
-              {policy.status === "OVERDUE" || policy.status === "AT_RISK" ? (
+              {overview.status === "OVERDUE" || overview.status === "AT_RISK" ? (
                 <AlertTriangle className="h-7 w-7" />
-              ) : policy.status === "NOT_STARTED" ? (
+              ) : overview.status === "NOT_STARTED" ? (
                 <Circle className="h-7 w-7" />
               ) : (
                 <CheckCircle2 className="h-7 w-7" />
               )}
             </span>
             <div className="mt-3 text-xl font-extrabold text-slate-900">
-              {policyStatusLabel(policy.status)}
+              {policyStatusLabel(overview.status)}
             </div>
             <p className="mt-2 max-w-[16rem] text-sm leading-5 text-slate-500">{statusCopy}</p>
           </div>
@@ -675,19 +809,32 @@ function OverviewTab({
             <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-slate-500">Next Notification</div>
-                <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[0.68rem] font-bold text-[var(--color-active-menu)]">
-                  Scheduled
+                <span
+                  className={cx(
+                    "inline-flex rounded-full px-2 py-0.5 text-[0.68rem] font-bold",
+                    overview.nextNotificationAt
+                      ? "bg-blue-50 text-[var(--color-active-menu)]"
+                      : "bg-slate-100 text-slate-500",
+                  )}
+                >
+                  {overview.nextNotificationAt ? "Scheduled" : "None"}
                 </span>
               </div>
-              <div className="mt-1 text-sm font-bold text-slate-900">Aug 23, 2026</div>
+              <div className="mt-1 text-sm font-bold text-slate-900">
+                {formatComplianceDate(overview.nextNotificationAt, "Not scheduled")}
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <div className="text-xs font-semibold text-slate-500">Notifications Sent</div>
-                  <div className="mt-1 text-sm font-bold text-slate-900">145</div>
-                  <div className="mt-0.5 text-xs text-slate-400">Last sent Aug 01, 2026</div>
+                  <div className="mt-1 text-sm font-bold text-slate-900">{overview.notificationsSent}</div>
+                  <div className="mt-0.5 text-xs text-slate-400">
+                    {overview.lastNotificationAt
+                      ? `Last sent ${formatComplianceDate(overview.lastNotificationAt)}`
+                      : "No notifications sent yet"}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -721,9 +868,13 @@ function OverviewTab({
         <OverviewPanelCard title="Certificates" onAction={() => onOpenTab("certificates")}>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-3xl font-extrabold text-slate-900">{completed}</div>
+              <div className="text-3xl font-extrabold text-slate-900">{overview.certificatesIssued}</div>
               <div className="text-sm font-semibold text-slate-500">Certificates Issued</div>
-              <div className="mt-1 text-xs text-slate-400">Last issued Aug 01, 2026</div>
+              <div className="mt-1 text-xs text-slate-400">
+                {overview.lastCertificateAt
+                  ? `Last issued ${formatComplianceDate(overview.lastCertificateAt)}`
+                  : "None issued yet"}
+              </div>
             </div>
             <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-[var(--color-success)]">
               <Award className="h-6 w-6" />
@@ -750,40 +901,63 @@ function OverviewTab({
           <div className="mt-4 space-y-2 border-t border-slate-100 pt-3 text-sm">
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-600">Auto-issue certificates</span>
-              <span className="font-bold text-[var(--color-success)]">Enabled</span>
+              <span
+                className={cx(
+                  "font-bold",
+                  overview.autoIssueCertificates
+                    ? "text-[var(--color-success)]"
+                    : "text-slate-500",
+                )}
+              >
+                {overview.autoIssueCertificates ? "Enabled" : "Disabled"}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-600">Include score in certificate</span>
-              <span className="font-bold text-[var(--color-success)]">Yes</span>
+              <span
+                className={cx(
+                  "font-bold",
+                  overview.includeScoreInCertificate
+                    ? "text-[var(--color-success)]"
+                    : "text-slate-500",
+                )}
+              >
+                {overview.includeScoreInCertificate ? "Yes" : "No"}
+              </span>
             </div>
           </div>
         </OverviewPanelCard>
 
         <OverviewPanelCard title="Recent Activity" onAction={() => onOpenTab("activity")}>
-          <ol className="space-y-3">
-            {activity.map((item, index) => {
-              const ItemIcon = item.Icon;
-              return (
-                <li key={`${item.title}-${index}`} className="flex items-start gap-3">
-                  <span
-                    className={cx(
-                      "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
-                      item.tone,
-                    )}
-                  >
-                    <ItemIcon className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="text-sm font-bold text-slate-900">{item.title}</div>
-                      <div className="shrink-0 text-xs text-slate-400">{item.time}</div>
+          {overview.activity.length === 0 ? (
+            <p className="text-sm text-slate-500">No recent activity for this policy.</p>
+          ) : (
+            <ol className="space-y-3">
+              {overview.activity.map((item, index) => {
+                const presentation = activityPresentation(item.kind);
+                const ItemIcon = presentation.Icon;
+                return (
+                  <li key={`${item.title}-${item.time}-${index}`} className="flex items-start gap-3">
+                    <span
+                      className={cx(
+                        "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
+                        presentation.tone,
+                      )}
+                    >
+                      <ItemIcon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="text-sm font-bold text-slate-900">{item.title}</div>
+                        <div className="shrink-0 text-xs text-slate-400">{item.time}</div>
+                      </div>
+                      <div className="mt-0.5 text-xs text-slate-500">{item.detail}</div>
                     </div>
-                    <div className="mt-0.5 text-xs text-slate-500">{item.detail}</div>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </OverviewPanelCard>
       </section>
     </div>
@@ -800,1048 +974,6 @@ function ProgressCell({ pct, status }: { pct: number; status: EmployeeStatus }) 
           style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
         />
       </div>
-    </div>
-  );
-}
-
-type NotificationChannel = "email" | "sms" | "inapp";
-
-function ChannelIcons({ channels }: { channels: NotificationChannel[] }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      {channels.includes("email") ? (
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-[var(--color-active-menu)]" title="Email">
-          <Mail className="h-3.5 w-3.5" />
-        </span>
-      ) : null}
-      {channels.includes("sms") ? (
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-[var(--color-success)]" title="SMS">
-          <Smartphone className="h-3.5 w-3.5" />
-        </span>
-      ) : null}
-      {channels.includes("inapp") ? (
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50 text-[var(--color-ai-accent)]" title="In-App">
-          <Bell className="h-3.5 w-3.5" />
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function NotificationsTab() {
-  const [ruleEnabled, setRuleEnabled] = useState<Record<string, boolean>>({
-    r1: true,
-    r2: true,
-    r3: true,
-    r4: true,
-    r5: true,
-    r6: true,
-  });
-  const [audience, setAudience] = useState("pending_overdue");
-  const [template, setTemplate] = useState("overdue");
-
-  const rules = [
-    {
-      id: "r1",
-      name: "Upcoming Due Date",
-      when: "7 days before due date",
-      channels: ["email", "inapp"] as NotificationChannel[],
-      recipients: "All Assigned",
-    },
-    {
-      id: "r2",
-      name: "Second Reminder",
-      when: "3 days before due date",
-      channels: ["email", "sms"] as NotificationChannel[],
-      recipients: "Pending employees",
-    },
-    {
-      id: "r3",
-      name: "Due Date Reminder",
-      when: "On due date",
-      channels: ["email", "sms", "inapp"] as NotificationChannel[],
-      recipients: "Pending & Overdue",
-    },
-    {
-      id: "r4",
-      name: "Overdue Reminder",
-      when: "Every day after due date",
-      channels: ["email", "inapp"] as NotificationChannel[],
-      recipients: "Overdue employees",
-    },
-    {
-      id: "r5",
-      name: "Escalation to Manager",
-      when: "5 days after due date",
-      channels: ["email"] as NotificationChannel[],
-      recipients: "Employee's Manager",
-    },
-    {
-      id: "r6",
-      name: "Escalation to Compliance",
-      when: "10 days after due date",
-      channels: ["email", "inapp"] as NotificationChannel[],
-      recipients: "Compliance Officers",
-    },
-  ];
-
-  const templates = [
-    { id: "t1", name: "Upcoming Due Date", badge: "Default" },
-    { id: "t2", name: "Due Date Reminder", badge: "Default" },
-    { id: "t3", name: "Overdue Reminder", badge: "Default" },
-    { id: "t4", name: "Escalation Notice", badge: "Custom" },
-  ];
-
-  const history = [
-    {
-      id: "h1",
-      date: "Aug 05, 2026",
-      time: "9:00 AM",
-      rule: "Upcoming Due Date",
-      channel: "Email",
-      recipients: "All Assigned",
-      status: "Delivered" as const,
-      delivered: 200,
-      opened: "148 (74%)",
-    },
-    {
-      id: "h2",
-      date: "Aug 04, 2026",
-      time: "8:30 AM",
-      rule: "Overdue Reminder",
-      channel: "Email + In-App",
-      recipients: "Overdue (8)",
-      status: "Delivered" as const,
-      delivered: 8,
-      opened: "6 (75%)",
-    },
-    {
-      id: "h3",
-      date: "Aug 03, 2026",
-      time: "10:15 AM",
-      rule: "Second Reminder",
-      channel: "SMS",
-      recipients: "Pending (18)",
-      status: "Failed" as const,
-      delivered: 0,
-      opened: "—",
-    },
-    {
-      id: "h4",
-      date: "Aug 01, 2026",
-      time: "9:00 AM",
-      rule: "Due Date Reminder",
-      channel: "Email",
-      recipients: "Pending & Overdue",
-      status: "Delivered" as const,
-      delivered: 26,
-      opened: "21 (81%)",
-    },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                Upcoming Notifications
-              </div>
-              <div className="mt-3 text-3xl font-extrabold text-slate-900">24</div>
-              <div className="mt-1 text-xs font-semibold text-slate-500">Next in 2 days</div>
-            </div>
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[var(--color-active-menu)]">
-              <CalendarClock className="h-5 w-5" />
-            </span>
-          </div>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                Sent (Last 30 Days)
-              </div>
-              <div className="mt-3 text-3xl font-extrabold text-slate-900">145</div>
-              <div className="mt-1 text-xs font-semibold text-[var(--color-success)]">100% Delivered</div>
-            </div>
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-[var(--color-success)]">
-              <Send className="h-5 w-5" />
-            </span>
-          </div>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Failed</div>
-              <div className="mt-3 text-3xl font-extrabold text-slate-900">1</div>
-              <div className="mt-1 text-xs font-semibold text-[var(--color-error)]">0.7% Failed</div>
-            </div>
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-[var(--color-error)]">
-              <AlertTriangle className="h-5 w-5" />
-            </span>
-          </div>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Channels Used</div>
-          <ul className="mt-3 space-y-2.5">
-            {[
-              { label: "Email", pct: 82, Icon: Mail, tone: "text-[var(--color-active-menu)]" },
-              { label: "SMS", pct: 12, Icon: Smartphone, tone: "text-[var(--color-success)]" },
-              { label: "In-App", pct: 6, Icon: MessageSquare, tone: "text-[var(--color-ai-accent)]" },
-            ].map((channel) => (
-              <li key={channel.label} className="flex items-center justify-between gap-3 text-sm">
-                <span className={cx("inline-flex items-center gap-2 font-medium text-slate-600", channel.tone)}>
-                  <channel.Icon className="h-3.5 w-3.5" />
-                  {channel.label}
-                </span>
-                <span className="font-bold text-slate-800">{channel.pct}%</span>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.9fr)]">
-        <article className="rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Notification Rules</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Configure when and how employees are notified about this policy.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add Rule</span>
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-[780px] w-full text-left">
-              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">#</th>
-                  <th className="px-4 py-3">Rule</th>
-                  <th className="px-4 py-3">When</th>
-                  <th className="px-4 py-3">Channel</th>
-                  <th className="px-4 py-3">Recipients</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
-                {rules.map((rule, index) => {
-                  const enabled = ruleEnabled[rule.id] ?? true;
-                  return (
-                    <tr key={rule.id} className="hover:bg-slate-50/70">
-                      <td className="px-4 py-3 font-semibold text-slate-500">{index + 1}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{rule.name}</td>
-                      <td className="px-4 py-3 text-slate-600">{rule.when}</td>
-                      <td className="px-4 py-3">
-                        <ChannelIcons channels={rule.channels} />
-                      </td>
-                      <td className="px-4 py-3">{rule.recipients}</td>
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={enabled}
-                          onClick={() =>
-                            setRuleEnabled((current) => ({
-                              ...current,
-                              [rule.id]: !enabled,
-                            }))
-                          }
-                          className={cx(
-                            "relative inline-flex h-6 w-11 items-center rounded-full transition",
-                            enabled ? "bg-[var(--color-success)]" : "bg-slate-300",
-                          )}
-                        >
-                          <span
-                            className={cx(
-                              "inline-block h-5 w-5 rounded-full bg-white shadow transition",
-                              enabled ? "translate-x-5" : "translate-x-0.5",
-                            )}
-                          />
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                          aria-label={`Actions for ${rule.name}`}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="border-t border-slate-200 px-4 py-3">
-            <button
-              type="button"
-              className="text-sm font-bold text-[var(--color-active-menu)] hover:underline"
-            >
-              View Inactive Rules
-            </button>
-          </div>
-        </article>
-
-        <div className="space-y-4">
-          <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-slate-900">Notification Templates</h3>
-              <button
-                type="button"
-                className="text-xs font-bold text-[var(--color-active-menu)] hover:underline"
-              >
-                View All
-              </button>
-            </div>
-            <ul className="space-y-2.5">
-              {templates.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-slate-900">{item.name}</div>
-                    <span className="mt-1 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[0.68rem] font-bold text-[var(--color-active-menu)]">
-                      {item.badge}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
-                    aria-label={`Template actions for ${item.name}`}
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </article>
-
-          <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-            <h3 className="text-sm font-bold text-slate-900">Send Notification Now</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              Manually notify a selected audience using a template.
-            </p>
-
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-600">Audience</label>
-                <DropdownSelect
-                  value={audience}
-                  onChange={(value) => {
-                    if (value) setAudience(value);
-                  }}
-                  options={[
-                    { value: "pending_overdue", label: "Pending & Overdue (26 employees)" },
-                    { value: "overdue", label: "Overdue only (8 employees)" },
-                    { value: "pending", label: "Pending only (18 employees)" },
-                    { value: "all", label: "All Assigned (200 employees)" },
-                  ]}
-                  allowClear={false}
-                  className="mt-2"
-                  aria-label="Audience"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-600">Template</label>
-                <DropdownSelect
-                  value={template}
-                  onChange={(value) => {
-                    if (value) setTemplate(value);
-                  }}
-                  options={[
-                    { value: "overdue", label: "Overdue Reminder" },
-                    { value: "due", label: "Due Date Reminder" },
-                    { value: "upcoming", label: "Upcoming Due Date" },
-                    { value: "escalation", label: "Escalation Notice" },
-                  ]}
-                  allowClear={false}
-                  className="mt-2"
-                  aria-label="Template"
-                />
-              </div>
-              <button
-                type="button"
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(37,99,235,0.18)]"
-              >
-                <Send className="h-4 w-4" />
-                <span>Send Now</span>
-              </button>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-4">
-          <h3 className="text-sm font-bold text-slate-900">Notification History</h3>
-          <button
-            type="button"
-            className="text-sm font-bold text-[var(--color-active-menu)] hover:underline"
-          >
-            View All History
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-[980px] w-full text-left">
-            <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Date & Time</th>
-                <th className="px-4 py-3">Rule / Template</th>
-                <th className="px-4 py-3">Channel</th>
-                <th className="px-4 py-3">Recipients</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Delivered</th>
-                <th className="px-4 py-3">Opened</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
-              {history.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50/70">
-                  <td className="px-4 py-3">
-                    <div className="font-semibold text-slate-800">{row.date}</div>
-                    <div className="text-xs text-slate-400">{row.time}</div>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-slate-900">{row.rule}</td>
-                  <td className="px-4 py-3">{row.channel}</td>
-                  <td className="px-4 py-3">{row.recipients}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={cx(
-                        "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
-                        row.status === "Delivered"
-                          ? "bg-emerald-50 text-[var(--color-success)]"
-                          : "bg-red-50 text-[var(--color-error)]",
-                      )}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-slate-800">{row.delivered}</td>
-                  <td className="px-4 py-3 font-semibold text-slate-800">{row.opened}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                      aria-label={`Actions for ${row.rule}`}
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-type CertificateStatus = "ISSUED" | "PENDING" | "EXPIRED" | "REVOKED";
-
-type CertificateRow = {
-  id: string;
-  name: string;
-  email: string;
-  initials: string;
-  avatarClassName: string;
-  department: string;
-  location: string;
-  completedAt: string | null;
-  completedTime: string | null;
-  score: number | null;
-  certificateNo: string | null;
-  status: CertificateStatus;
-};
-
-const MOCK_CERTIFICATES: CertificateRow[] = [
-  {
-    id: "c1",
-    name: "Maria Santos",
-    email: "maria.santos@hinora.com",
-    initials: "MS",
-    avatarClassName: "bg-blue-100 text-[var(--color-active-menu)]",
-    department: "Operations",
-    location: "Head Office",
-    completedAt: "Aug 01, 2026",
-    completedTime: "2:14 PM",
-    score: 94,
-    certificateNo: "HIN-ISP-2026-000174",
-    status: "ISSUED",
-  },
-  {
-    id: "c2",
-    name: "Juan Dela Cruz",
-    email: "juan.delacruz@hinora.com",
-    initials: "JD",
-    avatarClassName: "bg-violet-100 text-[var(--color-ai-accent)]",
-    department: "IT Department",
-    location: "Head Office",
-    completedAt: "Jul 29, 2026",
-    completedTime: "10:05 AM",
-    score: 88,
-    certificateNo: "HIN-ISP-2026-000163",
-    status: "ISSUED",
-  },
-  {
-    id: "c3",
-    name: "Mark Villanueva",
-    email: "mark.villanueva@hinora.com",
-    initials: "MV",
-    avatarClassName: "bg-cyan-100 text-cyan-700",
-    department: "Operations",
-    location: "Baguio",
-    completedAt: "Jul 30, 2026",
-    completedTime: "3:55 PM",
-    score: 95,
-    certificateNo: "HIN-ISP-2026-000168",
-    status: "ISSUED",
-  },
-  {
-    id: "c4",
-    name: "Liza Garcia",
-    email: "liza.garcia@hinora.com",
-    initials: "LG",
-    avatarClassName: "bg-rose-100 text-rose-600",
-    department: "Compliance",
-    location: "Head Office",
-    completedAt: "Aug 04, 2026",
-    completedTime: "11:30 AM",
-    score: 91,
-    certificateNo: "HIN-ISP-2026-000171",
-    status: "ISSUED",
-  },
-  {
-    id: "c5",
-    name: "Ana Reyes",
-    email: "ana.reyes@hinora.com",
-    initials: "AR",
-    avatarClassName: "bg-emerald-100 text-[var(--color-success)]",
-    department: "Finance",
-    location: "Baguio",
-    completedAt: "Aug 03, 2026",
-    completedTime: "4:42 PM",
-    score: 86,
-    certificateNo: null,
-    status: "PENDING",
-  },
-  {
-    id: "c6",
-    name: "Katrina Lee",
-    email: "katrina.lee@hinora.com",
-    initials: "KL",
-    avatarClassName: "bg-amber-100 text-[var(--color-warning)]",
-    department: "Human Resources",
-    location: "La Trinidad",
-    completedAt: null,
-    completedTime: null,
-    score: 85,
-    certificateNo: null,
-    status: "PENDING",
-  },
-  {
-    id: "c7",
-    name: "Sofia Ramos",
-    email: "sofia.ramos@hinora.com",
-    initials: "SR",
-    avatarClassName: "bg-slate-100 text-slate-600",
-    department: "Legal",
-    location: "Head Office",
-    completedAt: "Jun 12, 2026",
-    completedTime: "9:18 AM",
-    score: 90,
-    certificateNo: "HIN-ISP-2026-000042",
-    status: "REVOKED",
-  },
-];
-
-function certificateStatusTone(status: CertificateStatus) {
-  if (status === "ISSUED") return "bg-emerald-50 text-[var(--color-success)]";
-  if (status === "PENDING") return "bg-amber-50 text-[var(--color-warning)]";
-  if (status === "EXPIRED") return "bg-rose-50 text-rose-600";
-  return "bg-slate-100 text-slate-500";
-}
-
-function certificateStatusLabel(status: CertificateStatus) {
-  if (status === "ISSUED") return "Issued";
-  if (status === "PENDING") return "Pending";
-  if (status === "EXPIRED") return "Expired";
-  return "Revoked";
-}
-
-function CertificatesTab() {
-  const [search, setSearch] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("");
-  const [locationFilter, setLocationFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"" | CertificateStatus>("");
-  const [selectedRows, setSelectedRows] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState("10");
-
-  const departments = useMemo(
-    () => Array.from(new Set(MOCK_CERTIFICATES.map((row) => row.department))).sort(),
-    [],
-  );
-  const locations = useMemo(
-    () => Array.from(new Set(MOCK_CERTIFICATES.map((row) => row.location))).sort(),
-    [],
-  );
-
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return MOCK_CERTIFICATES.filter((row) => {
-      if (departmentFilter && row.department !== departmentFilter) return false;
-      if (locationFilter && row.location !== locationFilter) return false;
-      if (statusFilter && row.status !== statusFilter) return false;
-      if (!query) return true;
-      return (
-        row.name.toLowerCase().includes(query) ||
-        row.email.toLowerCase().includes(query) ||
-        (row.certificateNo?.toLowerCase().includes(query) ?? false)
-      );
-    });
-  }, [locationFilter, departmentFilter, search, statusFilter]);
-
-  const totalCertificates = 174;
-  const pageSizeNumber = Number.parseInt(pageSize, 10) || 10;
-  const totalPages = Math.max(1, Math.ceil(totalCertificates / pageSizeNumber));
-  const currentPage = Math.min(page, totalPages);
-  const pageStart = (currentPage - 1) * pageSizeNumber + 1;
-  const pageEnd = Math.min(currentPage * pageSizeNumber, totalCertificates);
-
-  const allVisibleSelected =
-    filtered.length > 0 && filtered.every((row) => selectedRows.includes(row.id));
-
-  function toggleAllVisible() {
-    if (allVisibleSelected) {
-      setSelectedRows((current) =>
-        current.filter((id) => !filtered.some((row) => row.id === id)),
-      );
-      return;
-    }
-    setSelectedRows((current) =>
-      Array.from(new Set([...current, ...filtered.map((row) => row.id)])),
-    );
-  }
-
-  function toggleRow(id: string) {
-    setSelectedRows((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-    );
-  }
-
-  function applyStatusQuickFilter(status: "" | CertificateStatus) {
-    setStatusFilter(status);
-    setPage(1);
-  }
-
-  return (
-    <div className="space-y-4">
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                Certificates Issued
-              </div>
-              <div className="mt-3 text-3xl font-extrabold text-slate-900">174</div>
-              <div className="mt-1 text-xs font-semibold text-slate-500">87% of 200 assigned</div>
-            </div>
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-[var(--color-ai-accent)]">
-              <Award className="h-5 w-5" />
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => applyStatusQuickFilter("ISSUED")}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[var(--color-active-menu)] hover:underline"
-          >
-            <span>View all certificates</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                Pending Certificates
-              </div>
-              <div className="mt-3 text-3xl font-extrabold text-slate-900">18</div>
-              <div className="mt-1 text-xs font-semibold text-slate-500">
-                Employees passed but not issued
-              </div>
-            </div>
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-[var(--color-warning)]">
-              <Clock3 className="h-5 w-5" />
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => applyStatusQuickFilter("PENDING")}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[var(--color-active-menu)] hover:underline"
-          >
-            <span>View pending</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                Expired Certificates
-              </div>
-              <div className="mt-3 text-3xl font-extrabold text-slate-900">0</div>
-              <div className="mt-1 text-xs font-semibold text-slate-500">No expired certificates</div>
-            </div>
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
-              <Calendar className="h-5 w-5" />
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => applyStatusQuickFilter("EXPIRED")}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[var(--color-active-menu)] hover:underline"
-          >
-            <span>View expired</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                Revoked Certificates
-              </div>
-              <div className="mt-3 text-3xl font-extrabold text-slate-900">2</div>
-              <div className="mt-1 text-xs font-semibold text-slate-500">Certificates revoked</div>
-            </div>
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-              <Ban className="h-5 w-5" />
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => applyStatusQuickFilter("REVOKED")}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[var(--color-active-menu)] hover:underline"
-          >
-            <span>View revoked</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </article>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900">Certificates</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              Manage and download certificates for employees who completed this policy.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700"
-            >
-              <Sparkles className="h-4 w-4" />
-              <span>Generate Missing Certificates</span>
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700"
-            >
-              <Download className="h-4 w-4" />
-              <span>Download All</span>
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700"
-            >
-              <Mail className="h-4 w-4" />
-              <span>Email Certificates</span>
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500"
-              aria-label="More certificate actions"
-            >
-              <MoreVertical className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
-          <label className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-400 xl:max-w-sm">
-            <Search className="h-4 w-4" />
-            <input
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(1);
-              }}
-              placeholder="Search employees..."
-              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-slate-800 outline-none"
-            />
-          </label>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <DropdownSelect
-              value={departmentFilter}
-              onChange={(value) => {
-                setDepartmentFilter(value);
-                setPage(1);
-              }}
-              options={departments.map((department) => ({
-                value: department,
-                label: department,
-              }))}
-              placeholder="All Departments"
-              allowClear
-              size="sm"
-              className="min-w-[10.5rem]"
-              aria-label="Filter by department"
-            />
-            <DropdownSelect
-              value={locationFilter}
-              onChange={(value) => {
-                setLocationFilter(value);
-                setPage(1);
-              }}
-              options={locations.map((location) => ({ value: location, label: location }))}
-              placeholder="All Locations"
-              allowClear
-              size="sm"
-              className="min-w-[10.5rem]"
-              aria-label="Filter by location"
-            />
-            <DropdownSelect
-              value={statusFilter}
-              onChange={(value) => {
-                setStatusFilter(value as "" | CertificateStatus);
-                setPage(1);
-              }}
-              options={[
-                { value: "ISSUED", label: "Issued" },
-                { value: "PENDING", label: "Pending" },
-                { value: "EXPIRED", label: "Expired" },
-                { value: "REVOKED", label: "Revoked" },
-              ]}
-              placeholder="All Statuses"
-              allowClear
-              size="sm"
-              className="min-w-[9.5rem]"
-              aria-label="Filter by status"
-            />
-            <button
-              type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500"
-              aria-label="More filters"
-            >
-              <Filter className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-[1180px] w-full text-left">
-            <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={toggleAllVisible}
-                    className="h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)]"
-                    aria-label="Select all visible certificates"
-                  />
-                </th>
-                <th className="px-4 py-3">Employee</th>
-                <th className="px-4 py-3">Department</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Completion Date</th>
-                <th className="px-4 py-3">Score</th>
-                <th className="px-4 py-3">Certificate No.</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white text-sm text-slate-700">
-              {filtered.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50/70">
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedRows.includes(row.id)}
-                      onChange={() => toggleRow(row.id)}
-                      className="h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)]"
-                      aria-label={`Select ${row.name}`}
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={cx(
-                          "inline-flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold",
-                          row.avatarClassName,
-                        )}
-                      >
-                        {row.initials}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="font-semibold text-slate-900">{row.name}</div>
-                        <div className="truncate text-xs text-slate-400">{row.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{row.department}</td>
-                  <td className="px-4 py-3">{row.location}</td>
-                  <td className="px-4 py-3">
-                    {row.completedAt ? (
-                      <>
-                        <div className="font-semibold text-slate-800">{row.completedAt}</div>
-                        <div className="text-xs text-slate-400">{row.completedTime}</div>
-                      </>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-bold text-[var(--color-success)]">
-                    {row.score != null ? `${row.score}%` : "—"}
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-slate-700">
-                    {row.certificateNo ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={cx(
-                        "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
-                        certificateStatusTone(row.status),
-                      )}
-                    >
-                      {certificateStatusLabel(row.status)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        disabled={row.status === "PENDING"}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`Download certificate for ${row.name}`}
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={row.status === "PENDING"}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`Email certificate for ${row.name}`}
-                      >
-                        <Mail className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                        aria-label={`More actions for ${row.name}`}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="text-sm text-slate-500">
-            Showing {pageStart} to {pageEnd} of {totalCertificates} certificates
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
-                aria-label="Previous page"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-              {[1, 2, 3, 4].map((pageNumber) => (
-                <button
-                  key={pageNumber}
-                  type="button"
-                  onClick={() => setPage(pageNumber)}
-                  className={cx(
-                    "inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-semibold",
-                    currentPage === pageNumber
-                      ? "bg-[var(--color-active-menu)] text-white"
-                      : "text-slate-600 hover:bg-slate-100",
-                  )}
-                >
-                  {pageNumber}
-                </button>
-              ))}
-              <span className="px-1 text-slate-400">…</span>
-              <button
-                type="button"
-                onClick={() => setPage(totalPages)}
-                className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
-              >
-                {totalPages}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
-                aria-label="Next page"
-              >
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-            <DropdownSelect
-              value={pageSize}
-              onChange={(value) => {
-                if (!value) return;
-                setPageSize(value);
-                setPage(1);
-              }}
-              options={[
-                { value: "10", label: "10 / page" },
-                { value: "25", label: "25 / page" },
-                { value: "50", label: "50 / page" },
-              ]}
-              allowClear={false}
-              size="sm"
-              className="min-w-[7.5rem]"
-              aria-label="Rows per page"
-            />
-          </div>
-        </div>
-      </section>
     </div>
   );
 }
@@ -2286,134 +1418,150 @@ function AssessmentMetricCard({
   );
 }
 
-function correctRateTone(rate: number) {
-  if (rate >= 90) return "bg-[var(--color-success)]";
-  if (rate >= 75) return "bg-[var(--color-warning)]";
-  return "bg-[var(--color-error)]";
+function formatAttempts(value: number) {
+  if (value <= 0) return "Unlimited";
+  return String(value);
 }
 
-function AssessmentTab({ onOpenActivity }: { onOpenActivity: () => void }) {
-  const questions = [
-    {
-      id: 1,
-      question: "What is the primary purpose of the Information Security Policy?",
-      type: "MCQ",
-      correctRate: 98,
-      averageTime: "15s",
-    },
-    {
-      id: 2,
-      question: "Which of the following is considered a strong password practice?",
-      type: "MCQ",
-      correctRate: 91,
-      averageTime: "22s",
-    },
-    {
-      id: 3,
-      question: "Match each data classification level to its handling requirement.",
-      type: "Matching",
-      correctRate: 84,
-      averageTime: "48s",
-    },
-    {
-      id: 4,
-      question: "Employees may share credentials with their manager when requested.",
-      type: "True/False",
-      correctRate: 76,
-      averageTime: "12s",
-    },
-    {
-      id: 5,
-      question: "What should you do first if you suspect a phishing email?",
-      type: "MCQ",
-      correctRate: 68,
-      averageTime: "28s",
-    },
-    {
-      id: 6,
-      question: "Describe when MFA is required for remote access.",
-      type: "Short Answer",
-      correctRate: 54,
-      averageTime: "1m 12s",
-    },
-  ];
+function formatTimeLimit(minutes: number) {
+  if (minutes <= 0) return "No limit";
+  if (minutes === 1) return "1 minute";
+  return `${minutes} minutes`;
+}
 
-  const distribution = [
-    { label: "90% and above", count: 92, pct: 46, color: "#10B981" },
-    { label: "80%–89%", count: 74, pct: 37, color: "#3B82F6" },
-    { label: "70%–79%", count: 18, pct: 9, color: "#F59E0B" },
-    { label: "Below 70%", count: 16, pct: 8, color: "#EF4444" },
-  ];
+function AssessmentTab({
+  policy,
+  onOpenActivity,
+}: {
+  policy: PolicyListItem;
+  onOpenActivity: () => void;
+}) {
+  const [assessment, setAssessment] = useState<ComplianceAssessment | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const builderHref = `/admin/assessments?policyId=${encodeURIComponent(policy.id)}`;
 
-  const recentActivity = [
-    {
-      title: "Maria Santos completed the assessment",
-      detail: "Score: 94% — Passed",
-      time: "2h ago",
-      Icon: CheckCircle2,
-      tone: "bg-emerald-50 text-[var(--color-success)]",
-    },
-    {
-      title: "8 employees failed the assessment",
-      detail: "Below passing score 80%",
-      time: "1d ago",
-      Icon: XCircle,
-      tone: "bg-red-50 text-[var(--color-error)]",
-    },
-    {
-      title: "Assessment updated",
-      detail: "Questions updated by Admin User",
-      time: "3d ago",
-      Icon: PencilLine,
-      tone: "bg-violet-50 text-[var(--color-ai-accent)]",
-    },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    setAssessment(null);
+    setMissing(false);
+
+    void fetchComplianceAssessment(policy.id)
+      .then((data) => {
+        if (cancelled) return;
+        if (!data.exists) {
+          setMissing(true);
+          return;
+        }
+        setAssessment(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unable to load assessment.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [policy.id]);
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-28 animate-pulse rounded-2xl border border-slate-200 bg-slate-50"
+            />
+          ))}
+        </div>
+        <div className="h-80 animate-pulse rounded-2xl border border-slate-200 bg-slate-50" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Unable to load assessment"
+        description={error}
+      />
+    );
+  }
+
+  if (missing || !assessment) {
+    return (
+      <EmptyState
+        icon={ClipboardCheck}
+        title="No assessment yet"
+        description="Create an assessment for this policy so employees can acknowledge it and you can track scores here."
+        actionLabel="Create Assessment"
+        onAction={() => {
+          window.location.href = builderHref;
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <AssessmentMetricCard
           title="Average Score"
-          value="92%"
-          trend="+4% vs last period"
-          subtitle={<span className="text-[var(--color-success)]">Passing Score: 80%</span>}
-          barPct={92}
+          value={assessment.attempted === 0 ? "—" : `${assessment.averageScore}%`}
+          subtitle={
+            <span className="text-[var(--color-success)]">
+              Passing Score: {assessment.passingScore}%
+            </span>
+          }
+          barPct={assessment.attempted === 0 ? 0 : assessment.averageScore}
           barClassName="bg-[var(--color-success)]"
           icon={ChartColumn}
           iconClassName="bg-emerald-50 text-[var(--color-success)]"
         />
         <AssessmentMetricCard
           title="Pass Rate"
-          value="96%"
-          subtitle="192 passed / 200 assigned"
-          barPct={96}
+          value={`${assessment.passRate}%`}
+          subtitle={`${assessment.passed} passed / ${assessment.assigned} assigned`}
+          barPct={assessment.passRate}
           barClassName="bg-[var(--color-active-menu)]"
           icon={CheckCircle2}
           iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
         />
         <AssessmentMetricCard
           title="Failed"
-          value="8"
-          subtitle="4% of total"
-          barPct={4}
+          value={String(assessment.failed)}
+          subtitle={`${sharePct(assessment.failed, assessment.assigned)}% of assigned`}
+          barPct={sharePct(assessment.failed, assessment.assigned)}
           barClassName="bg-[var(--color-error)]"
           icon={XCircle}
           iconClassName="bg-red-50 text-[var(--color-error)]"
         />
         <AssessmentMetricCard
           title="Attempts"
-          value="1.35"
+          value={assessment.attempted === 0 ? "—" : assessment.averageAttempts.toFixed(2)}
           subtitle="Average attempts per user"
-          barPct={45}
+          barPct={assessment.attempted === 0 ? 0 : Math.min(100, Math.round(assessment.averageAttempts * 33))}
           barClassName="bg-[var(--color-ai-accent)]"
           icon={ArrowUpRight}
           iconClassName="bg-violet-50 text-[var(--color-ai-accent)]"
         />
         <AssessmentMetricCard
-          title="Time to Complete"
-          value="18m 24s"
-          subtitle="Average completion time"
-          barPct={61}
+          title="Not Attempted"
+          value={String(assessment.notAttempted)}
+          subtitle={`${sharePct(assessment.notAttempted, assessment.assigned)}% of assigned`}
+          barPct={sharePct(assessment.notAttempted, assessment.assigned)}
           barClassName="bg-[var(--color-warning)]"
           icon={Clock3}
           iconClassName="bg-amber-50 text-[var(--color-warning)]"
@@ -2423,61 +1571,59 @@ function AssessmentTab({ onOpenActivity }: { onOpenActivity: () => void }) {
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.9fr)]">
         <article className="rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
           <div className="border-b border-slate-200 px-4 py-4">
-            <h3 className="text-sm font-bold text-slate-900">Question Performance</h3>
+            <h3 className="text-sm font-bold text-slate-900">Questions</h3>
             <p className="mt-1 text-sm text-slate-500">
-              Performance summary for each question in this assessment.
+              Questions in this assessment. Per-question scores appear after employees submit attempts.
             </p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-[720px] w-full text-left">
-              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">#</th>
-                  <th className="px-4 py-3">Question</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Correct Rate</th>
-                  <th className="px-4 py-3">Average Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
-                {questions.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/70">
-                    <td className="px-4 py-3 font-semibold text-slate-500">{row.id}</td>
-                    <td className="px-4 py-3">
-                      <div className="max-w-[320px] font-semibold text-slate-900">{row.question}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                        {row.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="min-w-[120px]">
-                        <div className="mb-1 text-xs font-bold text-slate-700">{row.correctRate}%</div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className={cx("h-full rounded-full", correctRateTone(row.correctRate))}
-                            style={{ width: `${row.correctRate}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{row.averageTime}</td>
+          {assessment.questions.length === 0 ? (
+            <EmptyState
+              icon={ClipboardCheck}
+              title="No questions yet"
+              description="Add questions in the Assessment Builder to start collecting results."
+              actionLabel="Open Assessment Builder"
+              onAction={() => {
+                window.location.href = builderHref;
+              }}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[640px] w-full text-left">
+                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-4 py-3">Question</th>
+                    <th className="px-4 py-3">Type</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
+                  {assessment.questions.map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-50/70">
+                      <td className="px-4 py-3 font-semibold text-slate-500">{row.number}</td>
+                      <td className="px-4 py-3">
+                        <div className="max-w-[420px] font-semibold text-slate-900">{row.prompt}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                          {row.type}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div className="border-t border-slate-200 px-4 py-3">
-            <button
-              type="button"
+            <Link
+              href={builderHref}
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               <ChartColumn className="h-4 w-4" />
-              <span>View Full Question Analytics</span>
-            </button>
+              <span>Edit in Assessment Builder</span>
+            </Link>
           </div>
         </article>
 
@@ -2487,38 +1633,56 @@ function AssessmentTab({ onOpenActivity }: { onOpenActivity: () => void }) {
             <dl className="mt-4 space-y-3 text-sm">
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-slate-500">Total Questions</dt>
-                <dd className="font-bold text-slate-900">25</dd>
+                <dd className="font-bold text-slate-900">{assessment.totalQuestions}</dd>
               </div>
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-slate-500">Question Types</dt>
                 <dd className="max-w-[180px] text-right font-semibold text-slate-800">
-                  MCQ (18), True/False (4), Matching (2), Short Answer (1)
+                  {assessment.questionTypes}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-slate-500">Passing Score</dt>
-                <dd className="font-bold text-slate-900">80%</dd>
+                <dd className="font-bold text-slate-900">{assessment.passingScore}%</dd>
               </div>
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-slate-500">Max Attempts</dt>
-                <dd className="font-bold text-slate-900">3</dd>
+                <dd className="font-bold text-slate-900">{formatAttempts(assessment.maximumAttempts)}</dd>
               </div>
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-slate-500">Time Limit</dt>
-                <dd className="font-bold text-slate-900">30 minutes</dd>
+                <dd className="font-bold text-slate-900">{formatTimeLimit(assessment.timeLimitMinutes)}</dd>
               </div>
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-slate-500">Randomize Questions</dt>
-                <dd className="font-bold text-[var(--color-success)]">Enabled</dd>
+                <dd
+                  className={cx(
+                    "font-bold",
+                    assessment.randomizeQuestions
+                      ? "text-[var(--color-success)]"
+                      : "text-slate-500",
+                  )}
+                >
+                  {assessment.randomizeQuestions ? "Enabled" : "Disabled"}
+                </dd>
               </div>
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-slate-500">Show Results to Users</dt>
-                <dd className="font-bold text-[var(--color-success)]">Enabled</dd>
+                <dd
+                  className={cx(
+                    "font-bold",
+                    assessment.showScoreImmediately
+                      ? "text-[var(--color-success)]"
+                      : "text-slate-500",
+                  )}
+                >
+                  {assessment.showScoreImmediately ? "Enabled" : "Disabled"}
+                </dd>
               </div>
             </dl>
 
             <Link
-              href="/admin/assessments"
+              href={builderHref}
               className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-[var(--color-active-menu)] hover:underline"
             >
               <span>View in Assessment Builder</span>
@@ -2528,35 +1692,37 @@ function AssessmentTab({ onOpenActivity }: { onOpenActivity: () => void }) {
 
           <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
             <h3 className="text-sm font-bold text-slate-900">Score Distribution</h3>
-            <div className="mt-4 flex flex-col items-center">
-              <SegmentedDonut
-                segments={distribution.map((item) => ({
-                  value: item.count,
-                  color: item.color,
-                }))}
-                centerValue="200"
-                centerLabel="Total"
-              />
-            </div>
-            <ul className="mt-4 space-y-2.5">
-              {distribution.map((item) => (
-                <li key={item.label} className="flex items-center justify-between gap-3 text-sm">
-                  <span className="inline-flex items-center gap-2 font-medium text-slate-600">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                    {item.label}
-                  </span>
-                  <span className="font-semibold text-slate-800">
-                    {item.count} <span className="text-slate-400">({item.pct}%)</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              className="mt-4 text-sm font-bold text-[var(--color-active-menu)] hover:underline"
-            >
-              View Detailed Distribution
-            </button>
+            {assessment.attempted === 0 ? (
+              <p className="mt-4 text-sm text-slate-500">
+                No submitted attempts yet. Distribution appears after employees take this assessment.
+              </p>
+            ) : (
+              <>
+                <div className="mt-4 flex flex-col items-center">
+                  <SegmentedDonut
+                    segments={assessment.distribution.map((item) => ({
+                      value: item.count,
+                      color: item.color,
+                    }))}
+                    centerValue={String(assessment.attempted)}
+                    centerLabel="Attempted"
+                  />
+                </div>
+                <ul className="mt-4 space-y-2.5">
+                  {assessment.distribution.map((item) => (
+                    <li key={item.label} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="inline-flex items-center gap-2 font-medium text-slate-600">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                        {item.label}
+                      </span>
+                      <span className="font-semibold text-slate-800">
+                        {item.count} <span className="text-slate-400">({item.pct}%)</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </article>
         </div>
       </section>
@@ -2573,35 +1739,479 @@ function AssessmentTab({ onOpenActivity }: { onOpenActivity: () => void }) {
             <ArrowUpRight className="h-3.5 w-3.5" />
           </button>
         </div>
-        <ol className="space-y-3">
-          {recentActivity.map((item, index) => {
-            const ItemIcon = item.Icon;
-            return (
-              <li
-                key={`${item.title}-${index}`}
-                className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3"
-              >
-                <span
-                  className={cx(
-                    "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-                    item.tone,
-                  )}
+        {assessment.activity.length === 0 ? (
+          <p className="text-sm text-slate-500">No assessment activity yet.</p>
+        ) : (
+          <ol className="space-y-3">
+            {assessment.activity.map((item, index) => {
+              const presentation = activityPresentation(item.kind);
+              const ItemIcon = presentation.Icon;
+              return (
+                <li
+                  key={`${item.title}-${index}`}
+                  className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3"
                 >
-                  <ItemIcon className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-bold text-slate-900">{item.title}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">{item.detail}</div>
+                  <span
+                    className={cx(
+                      "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                      presentation.tone,
+                    )}
+                  >
+                    <ItemIcon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{item.title}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">{item.detail}</div>
+                      </div>
+                      <div className="shrink-0 text-xs text-slate-400">{item.time}</div>
                     </div>
-                    <div className="shrink-0 text-xs text-slate-400">{item.time}</div>
                   </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function EmployeesTab({ policy }: { policy: PolicyListItem }) {
+  const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"" | EmployeeStatus>("");
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState("10");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    setEmployees([]);
+    setSelectedRows([]);
+    setPage(1);
+
+    void fetchComplianceEmployees(policy.id)
+      .then((rows) => {
+        if (!cancelled) {
+          setEmployees(rows.map(mapEmployeeToRow));
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unable to load employees.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [policy.id]);
+
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void fetchComplianceEmployees(policy.id)
+        .then((rows) => setEmployees(rows.map(mapEmployeeToRow)))
+        .catch(() => undefined);
+    }
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [policy.id]);
+
+  const departments = useMemo(
+    () => Array.from(new Set(employees.map((row) => row.department))).sort(),
+    [employees],
+  );
+  const locations = useMemo(
+    () => Array.from(new Set(employees.map((row) => row.location))).sort(),
+    [employees],
+  );
+
+  const filteredEmployees = useMemo(() => {
+    const query = employeeSearch.trim().toLowerCase();
+    return employees.filter((row) => {
+      if (departmentFilter && row.department !== departmentFilter) return false;
+      if (locationFilter && row.location !== locationFilter) return false;
+      if (statusFilter && row.status !== statusFilter) return false;
+      if (!query) return true;
+      return (
+        row.name.toLowerCase().includes(query) ||
+        row.email.toLowerCase().includes(query) ||
+        row.department.toLowerCase().includes(query)
+      );
+    });
+  }, [departmentFilter, employeeSearch, employees, locationFilter, statusFilter]);
+
+  const counts = useMemo(() => {
+    const completed = employees.filter((row) => row.status === "COMPLETED").length;
+    const pending = employees.filter((row) => row.status === "PENDING").length;
+    const overdue = employees.filter((row) => row.status === "OVERDUE").length;
+    const notStarted = employees.filter((row) => row.status === "NOT_STARTED").length;
+    return {
+      assigned: employees.length,
+      completed,
+      pending,
+      overdue,
+      notStarted,
+    };
+  }, [employees]);
+
+  const pageSizeNumber = Number.parseInt(pageSize, 10) || 10;
+  const totalEmployees = filteredEmployees.length;
+  const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSizeNumber));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = totalEmployees === 0 ? 0 : (currentPage - 1) * pageSizeNumber + 1;
+  const pageEnd = Math.min(currentPage * pageSizeNumber, totalEmployees);
+  const pagedEmployees = filteredEmployees.slice(pageStart - 1, pageEnd);
+  const pageNumbers = visiblePageNumbers(currentPage, totalPages);
+
+  const allVisibleSelected =
+    pagedEmployees.length > 0 &&
+    pagedEmployees.every((row) => selectedRows.includes(row.id));
+
+  function toggleAllVisible() {
+    if (allVisibleSelected) {
+      setSelectedRows((current) =>
+        current.filter((id) => !pagedEmployees.some((row) => row.id === id)),
+      );
+      return;
+    }
+    setSelectedRows((current) =>
+      Array.from(new Set([...current, ...pagedEmployees.map((row) => row.id)])),
+    );
+  }
+
+  function toggleRow(id: string) {
+    setSelectedRows((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-24 animate-pulse rounded-2xl border border-slate-200 bg-slate-50"
+            />
+          ))}
+        </div>
+        <div className="h-80 animate-pulse rounded-2xl border border-slate-200 bg-slate-50" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Unable to load employees"
+        description={error}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <StatCard
+          title="Total Assigned"
+          value={String(counts.assigned)}
+          icon={Users}
+          iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
+        />
+        <StatCard
+          title="Completed"
+          value={String(counts.completed)}
+          detail={`${sharePct(counts.completed, counts.assigned)}%`}
+          icon={CheckCircle2}
+          iconClassName="bg-emerald-50 text-[var(--color-success)]"
+        />
+        <StatCard
+          title="Pending"
+          value={String(counts.pending)}
+          detail={`${sharePct(counts.pending, counts.assigned)}%`}
+          icon={Clock3}
+          iconClassName="bg-amber-50 text-[var(--color-warning)]"
+        />
+        <StatCard
+          title="Overdue"
+          value={String(counts.overdue)}
+          detail={`${sharePct(counts.overdue, counts.assigned)}%`}
+          icon={AlertTriangle}
+          iconClassName="bg-red-50 text-[var(--color-error)]"
+        />
+        <StatCard
+          title="Not Started"
+          value={String(counts.notStarted)}
+          detail={`${sharePct(counts.notStarted, counts.assigned)}%`}
+          icon={Circle}
+          iconClassName="bg-slate-100 text-slate-500"
+        />
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
+          <label className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-400 xl:max-w-sm">
+            <Search className="h-4 w-4" />
+            <input
+              value={employeeSearch}
+              onChange={(event) => {
+                setEmployeeSearch(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search employees..."
+              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-slate-800 outline-none"
+            />
+          </label>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownSelect
+              value={departmentFilter}
+              onChange={(value) => {
+                setDepartmentFilter(value);
+                setPage(1);
+              }}
+              options={departments.map((department) => ({
+                value: department,
+                label: department,
+              }))}
+              placeholder="All Departments"
+              allowClear
+              size="sm"
+              className="min-w-[10.5rem]"
+              aria-label="Filter by department"
+            />
+            <DropdownSelect
+              value={locationFilter}
+              onChange={(value) => {
+                setLocationFilter(value);
+                setPage(1);
+              }}
+              options={locations.map((location) => ({ value: location, label: location }))}
+              placeholder="All Locations"
+              allowClear
+              size="sm"
+              className="min-w-[10.5rem]"
+              aria-label="Filter by location"
+            />
+            <DropdownSelect
+              value={statusFilter}
+              onChange={(value) => {
+                setStatusFilter(value as "" | EmployeeStatus);
+                setPage(1);
+              }}
+              options={[
+                { value: "COMPLETED", label: "Completed" },
+                { value: "PENDING", label: "Pending" },
+                { value: "OVERDUE", label: "Overdue" },
+                { value: "NOT_STARTED", label: "Not Started" },
+              ]}
+              placeholder="All Statuses"
+              allowClear
+              size="sm"
+              className="min-w-[9.5rem]"
+              aria-label="Filter by status"
+            />
+            <button
+              type="button"
+              onClick={() => exportEmployeesCsv(filteredEmployees, policy.title)}
+              disabled={filteredEmployees.length === 0}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              <span>Export</span>
+            </button>
+          </div>
+        </div>
+
+        {employees.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No employees assigned"
+            description="Assign this policy from Policy Assignments to track acknowledgement progress here."
+          />
+        ) : filteredEmployees.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No matching employees"
+            description="Try a different search or clear the department, location, or status filters."
+          />
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-[1180px] w-full text-left">
+                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleAllVisible}
+                        className="h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)]"
+                        aria-label="Select all visible employees"
+                      />
+                    </th>
+                    <th className="px-4 py-3">Employee</th>
+                    <th className="px-4 py-3">Department</th>
+                    <th className="px-4 py-3">Location</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Completion</th>
+                    <th className="px-4 py-3">Assessment Score</th>
+                    <th className="px-4 py-3">Due Date</th>
+                    <th className="px-4 py-3">Last Activity</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white text-sm text-slate-700">
+                  {pagedEmployees.map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-50/70">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedRows.includes(row.id)}
+                          onChange={() => toggleRow(row.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)]"
+                          aria-label={`Select ${row.name}`}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={cx(
+                              "inline-flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold",
+                              row.avatarClassName,
+                            )}
+                          >
+                            {row.initials}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-900">{row.name}</div>
+                            <div className="truncate text-xs text-slate-400">{row.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{row.department}</td>
+                      <td className="px-4 py-3">{row.location}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={cx(
+                            "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
+                            employeeStatusTone(row.status),
+                          )}
+                        >
+                          {employeeStatusLabel(row.status)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ProgressCell pct={row.completionPct} status={row.status} />
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">
+                        {row.assessmentScore != null ? `${row.assessmentScore}%` : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-800">{row.dueAt}</div>
+                        <div
+                          className={cx(
+                            "text-xs",
+                            row.dueHintTone === "danger" && "font-semibold text-[var(--color-error)]",
+                            row.dueHintTone === "info" && "text-[var(--color-active-menu)]",
+                            row.dueHintTone === "muted" && "text-slate-400",
+                          )}
+                        >
+                          {row.dueHint}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">{row.lastActivity}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                          aria-label={`Actions for ${row.name}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="text-sm text-slate-500">
+                {totalEmployees === 0
+                  ? "No employees to show"
+                  : `Showing ${pageStart} to ${pageEnd} of ${totalEmployees} employees`}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1">
+                  {pageNumbers.map((pageNumber, index) => {
+                    const previous = pageNumbers[index - 1];
+                    return (
+                      <span key={pageNumber} className="inline-flex items-center">
+                        {previous && pageNumber - previous > 1 ? (
+                          <span className="px-1 text-slate-400">…</span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setPage(pageNumber)}
+                          className={cx(
+                            "inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-semibold",
+                            currentPage === pageNumber
+                              ? "bg-[var(--color-active-menu)] text-white"
+                              : "text-slate-600 hover:bg-slate-100",
+                          )}
+                        >
+                          {pageNumber}
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
-              </li>
-            );
-          })}
-        </ol>
+                <DropdownSelect
+                  value={pageSize}
+                  onChange={(value) => {
+                    if (!value) return;
+                    setPageSize(value);
+                    setPage(1);
+                  }}
+                  options={[
+                    { value: "10", label: "10 / page" },
+                    { value: "25", label: "25 / page" },
+                    { value: "50", label: "50 / page" },
+                  ]}
+                  allowClear={false}
+                  size="sm"
+                  className="min-w-[7.5rem]"
+                  aria-label="Rows per page"
+                />
+              </div>
+            </div>
+          </>
+        )}
       </section>
     </div>
   );
@@ -2619,13 +2229,6 @@ export default function ComplianceManagementClient() {
   const policyFilterRef = useRef<HTMLDivElement | null>(null);
   const [selectedPolicyId, setSelectedPolicyId] = useState("");
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
-  const [employeeSearch, setEmployeeSearch] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("");
-  const [locationFilter, setLocationFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"" | EmployeeStatus>("");
-  const [selectedRows, setSelectedRows] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState("10");
 
   const hasActivePolicyFilters = Boolean(policyStatusFilter || policyCategoryFilter);
 
@@ -2698,339 +2301,56 @@ export default function ComplianceManagementClient() {
     };
   }, [policyFilterOpen]);
 
+  useEffect(() => {
+    function refreshSummaries() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void fetchComplianceSummaries()
+        .then((summaries) => {
+          const summaryByPolicy = new Map(
+            summaries.map((summary) => [summary.policyId, summary]),
+          );
+          setPolicies((current) =>
+            current.map((policy) =>
+              applyComplianceSummary(policy, summaryByPolicy.get(policy.id)),
+            ),
+          );
+        })
+        .catch(() => undefined);
+    }
+
+    window.addEventListener("focus", refreshSummaries);
+    document.addEventListener("visibilitychange", refreshSummaries);
+    return () => {
+      window.removeEventListener("focus", refreshSummaries);
+      document.removeEventListener("visibilitychange", refreshSummaries);
+    };
+  }, []);
+
   const selectedPolicy =
     policies.find((policy) => policy.id === selectedPolicyId) ?? policies[0] ?? null;
 
   const filteredPolicies = policies;
 
-  const departments = useMemo(
-    () => Array.from(new Set(MOCK_EMPLOYEES.map((row) => row.department))).sort(),
-    [],
-  );
-  const locations = useMemo(
-    () => Array.from(new Set(MOCK_EMPLOYEES.map((row) => row.location))).sort(),
-    [],
-  );
-
-  const filteredEmployees = useMemo(() => {
-    const query = employeeSearch.trim().toLowerCase();
-    return MOCK_EMPLOYEES.filter((row) => {
-      if (departmentFilter && row.department !== departmentFilter) return false;
-      if (locationFilter && row.location !== locationFilter) return false;
-      if (statusFilter && row.status !== statusFilter) return false;
-      if (!query) return true;
-      return (
-        row.name.toLowerCase().includes(query) ||
-        row.email.toLowerCase().includes(query) ||
-        row.department.toLowerCase().includes(query)
-      );
-    });
-  }, [locationFilter, departmentFilter, employeeSearch, statusFilter]);
-
-  const pageSizeNumber = Number.parseInt(pageSize, 10) || 10;
-  const totalEmployees = 200;
-  const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSizeNumber));
-  const currentPage = Math.min(page, totalPages);
-  const pageStart = (currentPage - 1) * pageSizeNumber + 1;
-  const pageEnd = Math.min(currentPage * pageSizeNumber, totalEmployees);
-
-  const allVisibleSelected =
-    filteredEmployees.length > 0 &&
-    filteredEmployees.every((row) => selectedRows.includes(row.id));
-
-  function toggleAllVisible() {
-    if (allVisibleSelected) {
-      setSelectedRows((current) =>
-        current.filter((id) => !filteredEmployees.some((row) => row.id === id)),
-      );
-      return;
-    }
-    setSelectedRows((current) =>
-      Array.from(new Set([...current, ...filteredEmployees.map((row) => row.id)])),
-    );
-  }
-
-  function toggleRow(id: string) {
-    setSelectedRows((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-    );
-  }
-
   let detailBody: ReactNode = null;
-  if (activeTab === "employees") {
-    detailBody = (
-      <div className="space-y-4">
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <StatCard
-            title="Total Assigned"
-            value="200"
-            icon={Users}
-            iconClassName="bg-blue-50 text-[var(--color-active-menu)]"
-          />
-          <StatCard
-            title="Completed"
-            value="174"
-            detail="87%"
-            icon={CheckCircle2}
-            iconClassName="bg-emerald-50 text-[var(--color-success)]"
-          />
-          <StatCard
-            title="Pending"
-            value="18"
-            detail="9%"
-            icon={Clock3}
-            iconClassName="bg-amber-50 text-[var(--color-warning)]"
-          />
-          <StatCard
-            title="Overdue"
-            value="8"
-            detail="4%"
-            icon={AlertTriangle}
-            iconClassName="bg-red-50 text-[var(--color-error)]"
-          />
-          <StatCard
-            title="Not Started"
-            value="0"
-            detail="0%"
-            icon={Circle}
-            iconClassName="bg-slate-100 text-slate-500"
-          />
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
-            <label className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-400 xl:max-w-sm">
-              <Search className="h-4 w-4" />
-              <input
-                value={employeeSearch}
-                onChange={(event) => {
-                  setEmployeeSearch(event.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search employees..."
-                className="min-w-0 flex-1 border-0 bg-transparent text-sm text-slate-800 outline-none"
-              />
-            </label>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <DropdownSelect
-                value={departmentFilter}
-                onChange={(value) => {
-                  setDepartmentFilter(value);
-                  setPage(1);
-                }}
-                options={departments.map((department) => ({
-                  value: department,
-                  label: department,
-                }))}
-                placeholder="All Departments"
-                allowClear
-                size="sm"
-                className="min-w-[10.5rem]"
-                aria-label="Filter by department"
-              />
-              <DropdownSelect
-                value={locationFilter}
-                onChange={(value) => {
-                  setLocationFilter(value);
-                  setPage(1);
-                }}
-                options={locations.map((location) => ({ value: location, label: location }))}
-                placeholder="All Locations"
-                allowClear
-                size="sm"
-                className="min-w-[10.5rem]"
-                aria-label="Filter by location"
-              />
-              <DropdownSelect
-                value={statusFilter}
-                onChange={(value) => {
-                  setStatusFilter(value as "" | EmployeeStatus);
-                  setPage(1);
-                }}
-                options={[
-                  { value: "COMPLETED", label: "Completed" },
-                  { value: "PENDING", label: "Pending" },
-                  { value: "OVERDUE", label: "Overdue" },
-                  { value: "NOT_STARTED", label: "Not Started" },
-                ]}
-                placeholder="All Statuses"
-                allowClear
-                size="sm"
-                className="min-w-[9.5rem]"
-                aria-label="Filter by status"
-              />
-              <button
-                type="button"
-                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700"
-              >
-                <Download className="h-4 w-4" />
-                <span>Export</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-[1180px] w-full text-left">
-              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={toggleAllVisible}
-                      className="h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)]"
-                      aria-label="Select all visible employees"
-                    />
-                  </th>
-                  <th className="px-4 py-3">Employee</th>
-                  <th className="px-4 py-3">Department</th>
-                  <th className="px-4 py-3">Location</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Completion</th>
-                  <th className="px-4 py-3">Assessment Score</th>
-                  <th className="px-4 py-3">Due Date</th>
-                  <th className="px-4 py-3">Last Activity</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white text-sm text-slate-700">
-                {filteredEmployees.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/70">
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedRows.includes(row.id)}
-                        onChange={() => toggleRow(row.id)}
-                        className="h-4 w-4 rounded border-slate-300 text-[var(--color-active-menu)]"
-                        aria-label={`Select ${row.name}`}
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={cx(
-                            "inline-flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold",
-                            row.avatarClassName,
-                          )}
-                        >
-                          {row.initials}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="font-semibold text-slate-900">{row.name}</div>
-                          <div className="truncate text-xs text-slate-400">{row.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{row.department}</td>
-                    <td className="px-4 py-3">{row.location}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={cx(
-                          "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
-                          employeeStatusTone(row.status),
-                        )}
-                      >
-                        {employeeStatusLabel(row.status)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <ProgressCell pct={row.completionPct} status={row.status} />
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">
-                      {row.assessmentScore != null ? `${row.assessmentScore}%` : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-800">{row.dueAt}</div>
-                      <div
-                        className={cx(
-                          "text-xs",
-                          row.dueHintTone === "danger" && "font-semibold text-[var(--color-error)]",
-                          row.dueHintTone === "info" && "text-[var(--color-active-menu)]",
-                          row.dueHintTone === "muted" && "text-slate-400",
-                        )}
-                      >
-                        {row.dueHint}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">{row.lastActivity}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                        aria-label={`Actions for ${row.name}`}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="text-sm text-slate-500">
-              Showing {pageStart} to {pageEnd} of {totalEmployees} employees
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1">
-                {[1, 2, 3].map((pageNumber) => (
-                  <button
-                    key={pageNumber}
-                    type="button"
-                    onClick={() => setPage(pageNumber)}
-                    className={cx(
-                      "inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-semibold",
-                      currentPage === pageNumber
-                        ? "bg-[var(--color-active-menu)] text-white"
-                        : "text-slate-600 hover:bg-slate-100",
-                    )}
-                  >
-                    {pageNumber}
-                  </button>
-                ))}
-                <span className="px-1 text-slate-400">…</span>
-                <button
-                  type="button"
-                  onClick={() => setPage(totalPages)}
-                  className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  {totalPages}
-                </button>
-              </div>
-              <DropdownSelect
-                value={pageSize}
-                onChange={(value) => {
-                  if (!value) return;
-                  setPageSize(value);
-                  setPage(1);
-                }}
-                options={[
-                  { value: "10", label: "10 / page" },
-                  { value: "25", label: "25 / page" },
-                  { value: "50", label: "50 / page" },
-                ]}
-                allowClear={false}
-                size="sm"
-                className="min-w-[7.5rem]"
-                aria-label="Rows per page"
-              />
-            </div>
-          </div>
-        </section>
-      </div>
-    );
+  if (activeTab === "employees" && selectedPolicy) {
+    detailBody = <EmployeesTab policy={selectedPolicy} />;
   } else if (activeTab === "overview" && selectedPolicy) {
     detailBody = (
       <OverviewTab policy={selectedPolicy} onOpenTab={setActiveTab} />
     );
-  } else if (activeTab === "assessment") {
-    detailBody = <AssessmentTab onOpenActivity={() => setActiveTab("activity")} />;
-  } else if (activeTab === "notifications") {
-    detailBody = <NotificationsTab />;
-  } else if (activeTab === "certificates") {
-    detailBody = <CertificatesTab />;
+  } else if (activeTab === "assessment" && selectedPolicy) {
+    detailBody = (
+      <AssessmentTab
+        policy={selectedPolicy}
+        onOpenActivity={() => setActiveTab("activity")}
+      />
+    );
+  } else if (activeTab === "notifications" && selectedPolicy) {
+    detailBody = <ComplianceNotificationsTab policyId={selectedPolicy.id} />;
+  } else if (activeTab === "certificates" && selectedPolicy) {
+    detailBody = <ComplianceCertificatesTab policy={selectedPolicy} />;
   } else if (activeTab === "activity") {
     detailBody = <ActivityTab />;
   } else {
@@ -3055,7 +2375,7 @@ export default function ComplianceManagementClient() {
         />
         <DashboardMobileNav variant="admin" />
 
-        <div className="px-4 py-5 md:px-5">
+        <div className="min-w-0 overflow-x-clip px-4 py-5 md:px-5">
           <div className="mb-5">
             <h1 className="text-[2rem] font-extrabold leading-tight text-slate-900">
               Compliance Center
@@ -3091,9 +2411,9 @@ export default function ComplianceManagementClient() {
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
-            <aside className="relative z-10 flex min-h-[560px] flex-col overflow-visible rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-              <div className="relative z-30 shrink-0 border-b border-slate-200 px-4 py-3">
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,18.75rem)_minmax(0,1fr)]">
+            <aside className="flex min-h-[560px] min-w-0 w-full max-w-full flex-col overflow-visible rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+              <div className="relative z-20 shrink-0 border-b border-slate-200 px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-bold text-slate-900">Policies</div>
                   {hasActivePolicyFilters ? (
@@ -3336,7 +2656,7 @@ export default function ComplianceManagementClient() {
               </div>
             </aside>
 
-            <div className="min-w-0 space-y-4">
+            <div className="min-w-0 overflow-x-clip space-y-4">
               {policiesLoading && !selectedPolicy ? (
                 <div className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
                   Loading policy details...

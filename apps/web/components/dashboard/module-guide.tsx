@@ -3,6 +3,8 @@
 import { useState, type ReactNode } from "react";
 import {
   BadgeCheck,
+  Bell,
+  Bookmark,
   BookOpenText,
   Building2,
   ChartColumn,
@@ -13,6 +15,7 @@ import {
   Network,
   ScrollText,
   Settings,
+  Shield,
   SquarePen,
   UserLock,
   UserPlus,
@@ -347,6 +350,81 @@ export const moduleGuides: Record<string, ModuleGuideContent> = {
       },
     ],
   },
+  "My Compliance": {
+    title: "My Compliance Guide",
+    description:
+      "Track your assigned policies, complete acknowledgements and assessments, and keep your compliance score up to date.",
+    buttonLabel: "View Compliance Guide",
+    Icon: Shield,
+    modalDescription: "How to use My Compliance to finish assigned work and monitor your progress.",
+    steps: [
+      {
+        title: "Review your overview",
+        description: "Start on Overview to see your score, upcoming deadlines, and a summary of open work.",
+        tone: "blue",
+      },
+      {
+        title: "Complete assigned tasks",
+        description: "Use My Tasks, Assessments, and Acknowledgements to finish each policy assigned to you.",
+        tone: "violet",
+      },
+      {
+        title: "Keep certificates handy",
+        description: "Passed assessments appear under Certificates so you can show completed compliance later.",
+        tone: "emerald",
+      },
+    ],
+  },
+  Bookmarks: {
+    title: "Bookmarks Guide",
+    description:
+      "Save policies you refer to often, organize them into collections, and open them again without searching the library.",
+    buttonLabel: "View Bookmarks Guide",
+    Icon: Bookmark,
+    modalDescription: "How to save and organize policies for quick access.",
+    steps: [
+      {
+        title: "Save a policy",
+        description: "Use Add Bookmark in the policy reader so the document appears on this page.",
+        tone: "blue",
+      },
+      {
+        title: "Filter and switch views",
+        description: "Search, filter by type or collection, and toggle grid or list to find a saved policy quickly.",
+        tone: "violet",
+      },
+      {
+        title: "Organize collections",
+        description: "Group bookmarks into folders like Security or Compliance, then move or remove items as needed.",
+        tone: "emerald",
+      },
+    ],
+  },
+  Notifications: {
+    title: "Notification Center Guide",
+    description:
+      "Review assignments, compliance reminders, and system updates. Mark items as read or open the related policy.",
+    buttonLabel: "View Notifications Guide",
+    Icon: Bell,
+    modalDescription: "How to work through alerts in Notification Center.",
+    steps: [
+      {
+        title: "Scan your inbox",
+        description: "Use tabs and filters to focus on unread items, assignments, compliance, or system updates.",
+        tone: "blue",
+      },
+      {
+        title: "Open the details",
+        description: "Select a notification to see the message, due date, and the steps you need to complete.",
+        tone: "violet",
+      },
+      {
+        title: "Take action",
+        description: "Mark items as read, delete them, or jump to the related policy.",
+        tone: "emerald",
+      },
+    ],
+  },
   Profile: {
     title: "Profile Guide",
     description:
@@ -382,7 +460,7 @@ export const moduleGuides: Record<string, ModuleGuideContent> = {
     steps: [
       {
         title: "Review organization defaults",
-        description: "Check branding, locale, and baseline preferences before making changes.",
+        description: "Check branding, address, locale, and baseline preferences before making changes. The address is used on printed reports.",
         tone: "blue",
       },
       {

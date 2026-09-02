@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import Image from "next/image";
 import type { LucideIcon } from "lucide-react";
-import { Bell, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
+import NotificationBell from "../inbox/notification-bell";
 import { ThemeToggle } from "../theme/theme-toggle";
 import GlobalCommandBar from "./global-command-bar";
 import SessionProfileDropdown from "./session-profile-dropdown";
@@ -40,6 +41,7 @@ type DashboardTopbarProps = {
   searchPlaceholder: string;
   searchMaxWidthClassName?: string;
   notificationCount: number;
+  notificationsHref?: string;
   secondaryActionIcon?: LucideIcon;
   secondaryActionLabel?: string;
   profileName: string;
@@ -53,7 +55,6 @@ type DashboardTopbarProps = {
 export function DashboardTopbar({
   searchPlaceholder,
   searchMaxWidthClassName = "max-w-[700px]",
-  notificationCount,
   secondaryActionIcon: SecondaryActionIcon,
   secondaryActionLabel,
   profileName,
@@ -66,7 +67,7 @@ export function DashboardTopbar({
   return (
     <header
       className={cx(
-        "sticky top-0 z-10 flex flex-col gap-4 border-b border-slate-200 bg-white/90 px-5 py-4 backdrop-blur md:flex-row md:items-center md:justify-between",
+        "sticky top-0 z-30 flex flex-col gap-4 border-b border-slate-200 bg-white/90 px-5 py-4 backdrop-blur md:flex-row md:items-center md:justify-between",
         className,
       )}
     >
@@ -88,16 +89,7 @@ export function DashboardTopbar({
       </div>
 
       <div className="flex w-full items-center justify-between gap-3 md:w-auto md:justify-start">
-        <button
-          className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500"
-          type="button"
-          aria-label="Notifications"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-1 top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-active-menu)] px-1 text-[0.68rem] font-bold text-white">
-            {notificationCount}
-          </span>
-        </button>
+        <NotificationBell />
 
         {SecondaryActionIcon && secondaryActionLabel ? (
           <button

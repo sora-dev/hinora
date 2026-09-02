@@ -9,6 +9,7 @@ import {
   Files,
   Filter,
   FolderTree,
+  Pencil,
   Search,
   Upload,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import { EmptyState } from "../../../components/ui/empty-state";
 import { ModuleGuide } from "../../../components/dashboard/module-guide";
 import UploadPolicyWizard, {
   type UploadWizardSubmitPayload,
+  type WizardExistingPolicy,
 } from "../../../components/policy-library/upload-policy-wizard";
 import { getHinoraSession } from "../../../components/dashboard/session";
 import { API_BASE_URL } from "../../../lib/api-base-url";
@@ -51,6 +53,7 @@ type PolicyRecord = {
   department: string;
   type: PolicyType;
   status: PolicyStatus;
+  version: number;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -146,6 +149,7 @@ function normalizePolicyRecord(policy: PolicyRecordLike): PolicyRecord {
     department: policy.department ?? "General",
     type: policy.type ?? "POLICY",
     status: policy.status ?? "DRAFT",
+    version: typeof policy.version === "number" ? policy.version : 1,
     createdAt: policy.createdAt,
     updatedAt: policy.updatedAt,
     createdBy: policy.createdBy,
@@ -187,6 +191,7 @@ export default function AdminPolicyLibraryClient() {
   const [data, setData] = useState<PoliciesResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState<WizardExistingPolicy | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [reanalyzingPolicyId, setReanalyzingPolicyId] = useState<string | null>(null);
@@ -231,6 +236,25 @@ export default function AdminPolicyLibraryClient() {
   const totalCategories = data?.filters.categories.length ?? 0;
   const policies = data?.data ?? [];
 
+  function toExistingPolicy(policy: PolicyRecord): WizardExistingPolicy {
+    return {
+      id: policy.id,
+      title: policy.title,
+      description: policy.description,
+      fileName: policy.fileName,
+      department: policy.department,
+      type: policy.type,
+      status: policy.status,
+      version: policy.version,
+      categoryId: policy.category?.id ?? null,
+    };
+  }
+
+  function closePolicyWizard() {
+    setShowUploadModal(false);
+    setEditingPolicy(null);
+  }
+
   async function submitPolicyUpload(
     payload: UploadWizardSubmitPayload,
     status: "DRAFT" | "PUBLISHED",
@@ -239,7 +263,9 @@ export default function AdminPolicyLibraryClient() {
     setSuccessMessage("");
 
     const formData = new FormData();
-    formData.append("file", payload.file);
+    if (payload.file) {
+      formData.append("file", payload.file);
+    }
     formData.append("title", payload.form.title.trim());
     formData.append("description", payload.form.description.trim());
     formData.append("categoryId", payload.form.categoryId);
@@ -251,11 +277,23 @@ export default function AdminPolicyLibraryClient() {
       "createdBy",
       getHinoraSession()?.name?.trim() || "Admin User",
     );
+    formData.append(
+      "updatedBy",
+      getHinoraSession()?.name?.trim() || "Admin User",
+    );
 
-    const response = await fetch(`${API_BASE_URL}/policies/upload`, {
-      method: "POST",
-      body: formData,
-    });
+    const isEdit = Boolean(editingPolicy);
+    if (!isEdit && !payload.file) {
+      throw new Error("A policy file is required.");
+    }
+
+    const response = await fetch(
+      isEdit ? `${API_BASE_URL}/policies/${editingPolicy?.id}` : `${API_BASE_URL}/policies/upload`,
+      {
+        method: isEdit ? "PATCH" : "POST",
+        body: formData,
+      },
+    );
 
     if (!response.ok) {
       const errorBody = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -265,10 +303,15 @@ export default function AdminPolicyLibraryClient() {
       );
     }
 
+    const versioned = isEdit && payload.file;
     setSuccessMessage(
       status === "PUBLISHED"
-        ? "Policy published successfully."
-        : "Policy draft saved successfully.",
+        ? versioned
+          ? "New policy version published successfully."
+          : "Policy published successfully."
+        : versioned
+          ? "New policy version saved as draft."
+          : "Policy draft saved successfully.",
     );
     await loadPolicies();
   }
@@ -369,7 +412,10 @@ export default function AdminPolicyLibraryClient() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowUploadModal(true)}
+                onClick={() => {
+                  setEditingPolicy(null);
+                  setShowUploadModal(true);
+                }}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-[var(--color-active-menu)] to-[var(--color-hover)] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(37,99,235,0.18)]"
               >
                 <Upload className="h-4 w-4" />
@@ -480,7 +526,9 @@ export default function AdminPolicyLibraryClient() {
                             </span>
                             <div>
                               <div className="font-semibold text-slate-900">{policy.title}</div>
-                              <div className="text-xs text-slate-400">{policy.fileName}</div>
+                              <div className="text-xs text-slate-400">
+                                {policy.fileName} · v{policy.version}.0
+                              </div>
                               {policy.summaryShort ? (
                                 <div className="mt-1 max-w-[360px] text-xs leading-5 text-slate-500">
                                   {policy.summaryShort}
@@ -546,6 +594,17 @@ export default function AdminPolicyLibraryClient() {
                           <div className="flex justify-end gap-2">
                             <button
                               type="button"
+                              onClick={() => {
+                                setShowUploadModal(false);
+                                setEditingPolicy(toExistingPolicy(policy));
+                              }}
+                              className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => void handleReanalyzePolicy(policy)}
                               disabled={reanalyzingPolicyId === policy.id}
                               className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -569,8 +628,9 @@ export default function AdminPolicyLibraryClient() {
       </section>
 
       <UploadPolicyWizard
-        open={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
+        open={showUploadModal || Boolean(editingPolicy)}
+        onClose={closePolicyWizard}
+        existingPolicy={editingPolicy}
         categories={data?.filters.categories ?? []}
         departmentOptions={Array.from(
           new Set((data?.data ?? []).map((policy) => policy.department).filter(Boolean)),

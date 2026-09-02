@@ -56,6 +56,7 @@ import {
 } from "./profile-activity";
 import { getApiBaseUrl } from "../../lib/api-base-url";
 import { collectDeviceClientInfo } from "../../lib/device-info";
+import { loadProfileAvatar, saveProfileAvatar } from "../../lib/profile-avatar";
 import { useTheme } from "../theme/theme-provider";
 
 type ProfileTab =
@@ -290,12 +291,7 @@ type ProfileUser = {
   createdAt: string;
 };
 
-const AVATAR_STORAGE_PREFIX = "hinora_avatar_";
 const SESSION_STORAGE_KEY = "hinora_session";
-
-function avatarStorageKey(userId: string) {
-  return `${AVATAR_STORAGE_PREFIX}${userId}`;
-}
 
 function formatProfileDate(value: string | null | undefined) {
   if (!value) return "—";
@@ -544,7 +540,7 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
 
     const userId = session.userId?.trim();
     if (userId) {
-      const storedAvatar = window.localStorage.getItem(avatarStorageKey(userId));
+      const storedAvatar = loadProfileAvatar(userId);
       if (storedAvatar) {
         setAvatarUrl(storedAvatar);
       }
@@ -883,7 +879,7 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
       setAvatarUrl(result);
       const userId = profileUser?.id ?? getHinoraSession()?.userId;
       if (userId) {
-        window.localStorage.setItem(avatarStorageKey(userId), result);
+        saveProfileAvatar(userId, result);
       }
       setProfileMessage({ type: "success", text: "Profile photo updated." });
     };

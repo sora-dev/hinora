@@ -1,3 +1,10 @@
+import { getApiBaseUrl } from "../../lib/api-base-url";
+import {
+  defaultOrganizationSettings,
+  fetchOrganizationSettings,
+  type OrganizationSettings,
+} from "../../lib/organization-settings";
+
 export type ReportId =
   | "user-activity"
   | "document-activity"
@@ -7,7 +14,8 @@ export type ReportId =
   | "department-compliance"
   | "training-completion"
   | "access-permission"
-  | "policy-library-summary";
+  | "policy-library-summary"
+  | "policy-assignment";
 
 export type ReportDefinition = {
   id: ReportId;
@@ -100,59 +108,20 @@ export const catalogReports: ReportDefinition[] = [
     name: "Policy Library Summary Report",
     description: "Overall summary of policies by status and category.",
   },
+  {
+    id: "policy-assignment",
+    name: "Policy Assignment Report",
+    description: "Assignments by policy, scope, due date, priority, and completion status.",
+  },
 ];
 
-const HISTORY_STORAGE_KEY = "hinora_reports_history";
-const ROW_COUNT = 245;
+const LEGACY_HISTORY_STORAGE_KEY = "hinora_reports_history";
 
-const LOCATIONS = ["Head Office", "Baguio", "La Trinidad"];
-
-const DEPARTMENTS = ["IT Department", "HR Department", "Compliance Department", "Operations"];
-
-const USERS = ["Admin User", "Maria Santos", "John Dela Cruz", "Anna Reyes", "Michael Cruz", "Guest Auditor"];
-const POLICIES = [
-  "Information Security Policy",
-  "Access Control Policy",
-  "HR Code of Conduct",
-  "Cybersecurity Incident Response",
-  "Business Continuity Plan",
-  "Data Classification Standard",
-  "Vendor Risk Policy",
-  "AI Usage Policy",
-  "Endpoint Security Standard",
-  "Board Governance Charter",
-];
-const COURSES = [
-  "Information Security Essentials",
-  "Code of Conduct",
-  "AML & Compliance Basics",
-  "Branch Operations Refresh",
-  "Access Control Awareness",
-];
-const CATEGORIES = [
-  "Information Security",
-  "Access Control",
-  "Human Resources",
-  "Compliance",
-  "Risk Management",
-  "Cybersecurity",
-  "Board Governance",
-  "Endpoint Security",
-];
-
-function mulberry32(seed: number) {
-  let value = seed;
-  return () => {
-    value |= 0;
-    value = (value + 0x6d2b79f5) | 0;
-    let t = Math.imul(value ^ (value >>> 15), 1 | value);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function pick<T>(rng: () => number, items: readonly T[]) {
-  return items[Math.floor(rng() * items.length)]!;
+export function defaultReportRange(days = 30) {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - (days - 1));
+  return { from, to };
 }
 
 export function toDateInputValue(date: Date) {
@@ -195,19 +164,6 @@ export function snapshotMatrix(snapshot: ReportSnapshot, columns = snapshot.colu
   return {
     labels: columns.map((column) => column.label),
     values: rows.map((row) => columns.map((column) => row[column.key] ?? "")),
-  };
-}
-
-export function buildReportSnapshot(id: ReportId, from: Date, to: Date): ReportSnapshot {
-  const definition = catalogReports.find((item) => item.id === id) ?? catalogReports[0];
-  const seed = from.getDate() + to.getDate() * 31 + id.length * 17;
-  const rng = mulberry32(seed + 2026);
-  const rows = Array.from({ length: ROW_COUNT }, (_, index) => buildRow(id, index, rng, from));
-
-  return {
-    ...definition,
-    ...reportLayout(id),
-    rows,
   };
 }
 
@@ -345,6 +301,26 @@ function reportLayout(id: ReportId): Omit<ReportSnapshot, "id" | "name" | "descr
       ],
     };
   }
+  if (id === "policy-assignment") {
+    return {
+      showCurrencyNote: false,
+      extraFilters: [
+        { key: "status", label: "Status" },
+        { key: "scope", label: "Scope" },
+        { key: "priority", label: "Priority" },
+      ],
+      columns: [
+        { key: "policy", label: "Policy" },
+        { key: "version", label: "Version" },
+        { key: "scope", label: "Scope" },
+        { key: "recipients", label: "Recipients", align: "right" },
+        { key: "startDate", label: "Start date" },
+        { key: "dueDate", label: "Due date" },
+        { key: "status", label: "Status" },
+        { key: "priority", label: "Priority" },
+      ],
+    };
+  }
   return {
     showCurrencyNote: false,
     extraFilters: [
@@ -364,130 +340,35 @@ function reportLayout(id: ReportId): Omit<ReportSnapshot, "id" | "name" | "descr
   };
 }
 
-function buildRow(id: ReportId, index: number, rng: () => number, from: Date): ReportRow {
-  const location = pick(rng, LOCATIONS);
-  const department = pick(rng, DEPARTMENTS);
-  const day = new Date(from);
-  day.setDate(from.getDate() - (index % 12));
-  const stamp = formatReportDateTime(day);
-
-  if (id === "user-activity") {
-    return {
-      location,
-      user: pick(rng, USERS),
-      department,
-      activity: pick(rng, ["Logged In", "Failed login", "Logged Out", "Viewed policy", "Updated profile"]),
-      device: pick(rng, ["Mac (macOS)", "Windows Desktop", "iPhone", "Android"]),
-      timestamp: stamp,
-      status: pick(rng, ["Success", "Success", "Success", "Failed"]),
-    };
-  }
-  if (id === "document-activity") {
-    return {
-      location,
-      document: pick(rng, POLICIES),
-      category: pick(rng, CATEGORIES),
-      action: pick(rng, ["Uploaded", "Updated", "Downloaded", "Viewed"]),
-      user: pick(rng, USERS),
-      department,
-      timestamp: stamp,
-    };
-  }
-  if (id === "policy-review") {
-    return {
-      location,
-      policy: pick(rng, POLICIES),
-      owner: pick(rng, USERS),
-      department,
-      category: pick(rng, CATEGORIES),
-      reviewDate: formatReportDate(day),
-      status: pick(rng, ["Overdue", "Upcoming", "Completed", "Upcoming"]),
-      priority: pick(rng, ["High", "Medium", "Low"]),
-    };
-  }
-  if (id === "policy-exception") {
-    return {
-      location,
-      exception: pick(rng, [
-        "Shared admin workstation",
-        "Delayed MFA enrollment",
-        "Legacy file share access",
-        "External auditor guest login",
-        "Temporary local admin",
-      ]),
-      policy: pick(rng, POLICIES),
-      department,
-      status: pick(rng, ["Open", "Approved", "Expired"]),
-      expires: formatReportDate(day),
-      risk: pick(rng, ["High", "Medium", "Low"]),
-    };
-  }
-  if (id === "policy-approval") {
-    const decision = pick(rng, ["Approved", "Pending", "Rejected"]);
-    return {
-      location,
-      policy: pick(rng, POLICIES),
-      department,
-      submittedBy: pick(rng, USERS),
-      approver: pick(rng, ["Maria Santos", "Admin User"]),
-      submitted: formatReportDate(day),
-      decision,
-      turnaround: decision === "Pending" ? "—" : `${1 + (index % 5)} days`,
-    };
-  }
-  if (id === "department-compliance") {
-    const required = 24;
-    const overdue = index % 7;
-    const completed = required - overdue;
-    return {
-      location,
-      department,
-      required: String(required),
-      completed: String(completed),
-      overdue: String(overdue),
-      compliance: `${Math.round((completed / required) * 100)}%`,
-      trend: pick(rng, ["Up", "Down", "Steady"]),
-    };
-  }
-  if (id === "training-completion") {
-    const assigned = 8 + (index % 20);
-    const overdue = index % 5;
-    const completed = Math.max(0, assigned - overdue);
-    const progress = overdue === 0 ? "Completed" : completed === 0 ? "Overdue" : "In progress";
-    return {
-      location,
-      course: pick(rng, COURSES),
-      department,
-      assigned: String(assigned),
-      completed: String(completed),
-      overdue: String(overdue),
-      rate: `${Math.round((completed / assigned) * 100)}%`,
-      progress,
-    };
-  }
-  if (id === "access-permission") {
-    return {
-      location,
-      user: pick(rng, USERS),
-      department,
-      change: pick(rng, ["Role updated", "Permission granted", "Account created", "Access revoked", "MFA enforced"]),
-      fromValue: pick(rng, ["Employee", "View only", "Optional", "HR Department"]),
-      toValue: pick(rng, ["HR Officer", "Policies: Publish", "Required", "Operations", "None"]),
-      changedBy: pick(rng, ["Admin User", "Maria Santos", "Anna Reyes"]),
-      date: formatReportDate(day),
-    };
-  }
+function normalizeSnapshot(id: ReportId, value: Partial<ReportSnapshot> | null | undefined): ReportSnapshot {
+  const definition = catalogReports.find((item) => item.id === id) ?? catalogReports[0];
+  const layout = reportLayout(id);
+  const rows = Array.isArray(value?.rows)
+    ? value.rows.filter((row): row is ReportRow => Boolean(row) && typeof row === "object")
+    : [];
 
   return {
-    location,
-    category: pick(rng, CATEGORIES),
-    policy: pick(rng, POLICIES),
-    department,
-    status: pick(rng, ["Published", "In review", "Draft"]),
-    owner: pick(rng, USERS),
-    updated: formatReportDate(day),
-    version: `v${1 + (index % 5)}.${index % 9}`,
+    id,
+    name: value?.name ?? definition.name,
+    description: value?.description ?? definition.description,
+    showCurrencyNote: value?.showCurrencyNote ?? layout.showCurrencyNote,
+    extraFilters: value?.extraFilters ?? layout.extraFilters,
+    columns: value?.columns ?? layout.columns,
+    rows: rows.map((row) =>
+      Object.fromEntries(Object.entries(row).map(([key, cell]) => [key, String(cell ?? "")])),
+    ),
   };
+}
+
+export async function fetchReportSnapshot(id: ReportId, from: Date, to: Date): Promise<ReportSnapshot> {
+  const params = new URLSearchParams({
+    from: toDateInputValue(from),
+    to: toDateInputValue(to),
+  });
+  const payload = await requestReportHistory<{ data?: Partial<ReportSnapshot> }>(
+    `/reports/${id}?${params.toString()}`,
+  );
+  return normalizeSnapshot(id, payload.data);
 }
 
 export function downloadCsv(filename: string, columns: string[], rows: string[][]) {
@@ -517,19 +398,57 @@ export function downloadSnapshotXls(snapshot: ReportSnapshot, columns = snapshot
   downloadXls(`hinora-${slug(snapshot.name)}.xls`, matrix.labels, matrix.values);
 }
 
-export function printReport(
+function resolvePrintAssetUrl(value: string | null) {
+  if (!value) return "";
+  if (
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    value.startsWith("http://") ||
+    value.startsWith("https://")
+  ) {
+    return value;
+  }
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  return `${origin}${value.startsWith("/") ? value : `/${value}`}`;
+}
+
+function waitForPrintImages(doc: Document) {
+  const images = Array.from(doc.images);
+  if (images.length === 0) {
+    return Promise.resolve();
+  }
+
+  return Promise.all(
+    images.map(
+      (image) =>
+        new Promise<void>((resolve) => {
+          if (image.complete) {
+            resolve();
+            return;
+          }
+          image.addEventListener("load", () => resolve(), { once: true });
+          image.addEventListener("error", () => resolve(), { once: true });
+          window.setTimeout(() => resolve(), 1200);
+        }),
+    ),
+  ).then(() => undefined);
+}
+
+function buildReportPrintHtml(
   snapshot: ReportSnapshot,
   rangeLabel: string,
   generatedAt: string,
-  columns = snapshot.columns,
-  rows = snapshot.rows,
+  columns: ReportColumn[],
+  rows: ReportRow[],
+  organization: OrganizationSettings,
 ) {
-  const windowRef = window.open("", "_blank", "noopener,noreferrer,width=1200,height=800");
-  if (!windowRef) return;
+  const logoSrc = resolvePrintAssetUrl(organization.logoUrl);
+  const address = organization.organizationAddress.trim();
+  const phone = organization.organizationPhone.trim();
   const header = columns
     .map(
       (column) =>
-        `<th style="text-align:${column.align === "right" ? "right" : "left"};font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;padding:8px 10px;border-bottom:1px solid #e2e8f0;">${escapeHtml(column.label)}</th>`,
+        `<th class="${column.align === "right" ? "num" : ""}">${escapeHtml(column.label)}</th>`,
     )
     .join("");
   const body = rows
@@ -538,20 +457,198 @@ export function printReport(
         `<tr>${columns
           .map(
             (column) =>
-              `<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:${column.align === "right" ? "right" : "left"};">${escapeHtml(row[column.key] ?? "")}</td>`,
+              `<td class="${column.align === "right" ? "num" : ""}">${escapeHtml(row[column.key] ?? "")}</td>`,
           )
           .join("")}</tr>`,
     )
     .join("");
-  windowRef.document.write(`<!doctype html><html><head><title>${escapeHtml(snapshot.name)}</title></head>
-    <body style="font-family:Inter,system-ui,sans-serif;color:#0f172a;padding:32px;">
-      <h1 style="margin:0 0 4px;font-size:22px;">${escapeHtml(snapshot.name)}</h1>
-      <p style="margin:0 0 18px;color:#64748b;font-size:13px;">${escapeHtml(rangeLabel)} · Generated ${escapeHtml(generatedAt)} · ${rows.length} records</p>
-      <table style="width:100%;border-collapse:collapse;"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
-    </body></html>`);
-  windowRef.document.close();
-  windowRef.focus();
-  windowRef.print();
+  const logoHtml = logoSrc
+    ? `<img class="org-logo" src="${escapeHtml(logoSrc)}" alt="${escapeHtml(organization.organizationName)}" />`
+    : `<div class="org-mark">${escapeHtml(organization.organizationCode || "ORG")}</div>`;
+  const addressHtml = address
+    ? `<p class="org-address">${escapeHtml(address)}</p>`
+    : "";
+  const phoneHtml = phone
+    ? `<p class="org-phone">Phone/Mobile Number: ${escapeHtml(phone)}</p>`
+    : "";
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(snapshot.name)}</title>
+    <style>
+      @page {
+        size: letter portrait;
+        margin: 0.5in 0.6in 0.95in;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+        color: #0f172a;
+        background: #fff;
+        padding-bottom: 0.7in;
+      }
+      .letterhead {
+        width: 100%;
+        text-align: center;
+        padding: 0 0 14px;
+        border-bottom: 2px solid #1d4ed8;
+        margin-bottom: 18px;
+      }
+      .letterhead-inner {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        max-width: 92%;
+        text-align: center;
+      }
+      .org-logo {
+        width: 58px;
+        height: 58px;
+        object-fit: contain;
+        flex-shrink: 0;
+      }
+      .org-mark {
+        width: 58px;
+        height: 58px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+      }
+      .org-copy { min-width: 0; text-align: center; }
+      .org-name { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; }
+      .org-address { margin: 6px 0 0; font-size: 11.5px; color: #475569; white-space: pre-line; line-height: 1.45; }
+      .org-phone { margin: 4px 0 0; font-size: 11.5px; color: #475569; }
+      .report-title { margin: 0 0 4px; font-size: 16px; font-weight: 800; text-align: center; }
+      .report-meta { margin: 0 0 16px; font-size: 11px; color: #64748b; text-align: center; }
+      .data-table { width: 100%; border-collapse: collapse; }
+      .data-table thead { display: table-header-group; }
+      .data-table th, .data-table td {
+        padding: 7px 8px;
+        font-size: 11px;
+        border-bottom: 1px solid #e2e8f0;
+        vertical-align: top;
+      }
+      .data-table th {
+        text-align: left;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #64748b;
+        background: #f8fafc;
+        border-bottom: 1px solid #cbd5e1;
+      }
+      .num { text-align: right; }
+      .data-table tr { page-break-inside: avoid; }
+      .print-footer {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 8px 0 4px;
+        border-top: 1px solid #cbd5e1;
+        font-size: 9.5px;
+        color: #64748b;
+        text-align: center;
+        line-height: 1.45;
+        background: #fff;
+      }
+      .print-footer strong { color: #0f172a; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <header class="letterhead">
+      <div class="letterhead-inner">
+        ${logoHtml}
+        <div class="org-copy">
+          <p class="org-name">${escapeHtml(organization.organizationName)}</p>
+          ${addressHtml}
+          ${phoneHtml}
+        </div>
+      </div>
+    </header>
+    <h1 class="report-title">${escapeHtml(snapshot.name)}</h1>
+    <p class="report-meta">${escapeHtml(rangeLabel)} · Generated ${escapeHtml(generatedAt)} · ${rows.length} records</p>
+    <table class="data-table">
+      <thead><tr>${header}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+    <footer class="print-footer">
+      <div><strong>Confidential</strong> — For authorized personnel of ${escapeHtml(organization.organizationName)} only.</div>
+      <div>Generated by Hinora Policy System${phone ? ` · Tel ${escapeHtml(phone)}` : ""} · Printed ${escapeHtml(generatedAt)}</div>
+    </footer>
+  </body>
+</html>`;
+}
+
+export async function printReport(
+  snapshot: ReportSnapshot,
+  rangeLabel: string,
+  generatedAt: string,
+  columns = snapshot.columns,
+  rows = snapshot.rows,
+) {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+
+  const organization = await fetchOrganizationSettings().catch(
+    () => defaultOrganizationSettings,
+  );
+  const html = buildReportPrintHtml(
+    snapshot,
+    rangeLabel,
+    generatedAt,
+    columns,
+    rows,
+    organization,
+  );
+  document.getElementById("hinora-print-frame")?.remove();
+
+  const iframe = document.createElement("iframe");
+  iframe.id = "hinora-print-frame";
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.setAttribute("title", "Print report");
+  iframe.style.cssText =
+    "position:fixed;top:0;left:0;width:8.5in;height:11in;border:0;opacity:0;pointer-events:none;z-index:-1;";
+  document.body.appendChild(iframe);
+
+  const frameWindow = iframe.contentWindow;
+  if (!frameWindow) {
+    iframe.remove();
+    return;
+  }
+
+  let printed = false;
+  const cleanup = () => {
+    iframe.remove();
+  };
+
+  const startPrint = () => {
+    if (printed || !frameWindow.document.querySelector(".letterhead")) {
+      return;
+    }
+    printed = true;
+    void waitForPrintImages(frameWindow.document).then(() => {
+      frameWindow.focus();
+      frameWindow.print();
+      frameWindow.addEventListener("afterprint", cleanup, { once: true });
+      window.setTimeout(cleanup, 60_000);
+    });
+  };
+
+  iframe.addEventListener("load", startPrint);
+  iframe.srcdoc = html;
 }
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -579,59 +676,139 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;");
 }
 
-export function createHistoryId() {
-  return `rpt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function isReportId(value: string): value is ReportId {
+  return catalogReports.some((report) => report.id === value);
 }
 
-export function loadReportHistory(): ReportHistoryItem[] {
-  if (typeof window === "undefined") return [];
+function normalizeHistoryItem(value: Partial<ReportHistoryItem> | null | undefined): ReportHistoryItem | null {
+  if (!value?.id || !value.reportId || !isReportId(value.reportId) || !value.name) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    reportId: value.reportId,
+    name: value.name,
+    generatedAt: value.generatedAt ?? new Date().toISOString(),
+    generatedBy: value.generatedBy ?? "Admin User",
+    dateFrom: value.dateFrom ?? "",
+    dateTo: value.dateTo ?? "",
+    format: value.format ?? "View",
+    status: value.status ?? "Completed",
+    rowCount: typeof value.rowCount === "number" ? value.rowCount : 0,
+  };
+}
+
+function readLegacyReportHistory() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
   try {
-    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
-    if (!raw) return createSeedHistory();
-    const parsed = JSON.parse(raw) as ReportHistoryItem[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : createSeedHistory();
+    const raw = window.localStorage.getItem(LEGACY_HISTORY_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as Partial<ReportHistoryItem>[];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((item) => normalizeHistoryItem(item))
+      .filter((item): item is ReportHistoryItem => Boolean(item && !item.id.startsWith("seed-")));
   } catch {
-    return createSeedHistory();
+    return [];
   }
 }
 
-export function saveReportHistory(items: ReportHistoryItem[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items.slice(0, 200)));
+function clearLegacyReportHistory() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(LEGACY_HISTORY_STORAGE_KEY);
 }
 
-export function createSeedHistory(): ReportHistoryItem[] {
-  const now = new Date();
-  const names = [
-    { id: "user-activity" as const, format: "XLS" as const, daysAgo: 1, fromOffset: 7 },
-    { id: "policy-library-summary" as const, format: "PDF" as const, daysAgo: 2, fromOffset: 30 },
-    { id: "department-compliance" as const, format: "View" as const, daysAgo: 3, fromOffset: 30 },
-    { id: "training-completion" as const, format: "CSV" as const, daysAgo: 5, fromOffset: 14 },
-    { id: "policy-approval" as const, format: "PDF" as const, daysAgo: 8, fromOffset: 30 },
-    { id: "access-permission" as const, format: "CSV" as const, daysAgo: 9, fromOffset: 7 },
-    { id: "document-activity" as const, format: "View" as const, daysAgo: 12, fromOffset: 7 },
-    { id: "policy-review" as const, format: "PDF" as const, daysAgo: 14, fromOffset: 90 },
-  ];
+async function requestReportHistory<T>(path: string, init?: RequestInit) {
+  const apiBaseUrl = getApiBaseUrl();
+  if (!apiBaseUrl) {
+    throw new Error("API is not configured.");
+  }
 
-  return names.map((item, index) => {
-    const generated = new Date(now);
-    generated.setDate(now.getDate() - item.daysAgo);
-    generated.setHours(10 + (index % 8), 15 + index * 3, 0, 0);
-    const to = new Date(generated);
-    const from = new Date(generated);
-    from.setDate(generated.getDate() - item.fromOffset);
-    const definition = catalogReports.find((report) => report.id === item.id)!;
-    return {
-      id: `seed-${item.id}-${item.daysAgo}`,
-      reportId: item.id,
-      name: definition.name,
-      generatedAt: generated.toISOString(),
-      generatedBy: index % 2 === 0 ? "Admin User" : "Maria Santos",
-      dateFrom: toDateInputValue(from),
-      dateTo: toDateInputValue(to),
-      format: item.format,
-      status: index === 6 ? "Failed" : "Completed",
-      rowCount: ROW_COUNT,
-    };
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
   });
+
+  const payload = (await response.json().catch(() => null)) as T & { message?: string };
+  if (!response.ok) {
+    throw new Error(payload?.message ?? "Unable to update report history.");
+  }
+
+  return payload;
+}
+
+export async function fetchReportHistory() {
+  const payload = await requestReportHistory<{ data?: Partial<ReportHistoryItem>[] }>(
+    "/report-history",
+  );
+  const remote = (payload.data ?? [])
+    .map((item) => normalizeHistoryItem(item))
+    .filter((item): item is ReportHistoryItem => Boolean(item));
+
+  const legacy = readLegacyReportHistory();
+  if (legacy.length === 0) {
+    clearLegacyReportHistory();
+    return remote;
+  }
+
+  if (remote.length === 0) {
+    const imported: ReportHistoryItem[] = [];
+    for (const item of legacy) {
+      imported.push(await createReportHistory(item));
+    }
+    clearLegacyReportHistory();
+    return imported;
+  }
+
+  clearLegacyReportHistory();
+  return remote;
+}
+
+export async function createReportHistory(
+  item: Omit<ReportHistoryItem, "id"> & { id?: string },
+) {
+  const payload = await requestReportHistory<{ data?: Partial<ReportHistoryItem> }>(
+    "/report-history",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        reportId: item.reportId,
+        name: item.name,
+        generatedAt: item.generatedAt,
+        generatedBy: item.generatedBy,
+        dateFrom: item.dateFrom,
+        dateTo: item.dateTo,
+        format: item.format,
+        status: item.status,
+        rowCount: item.rowCount,
+      }),
+    },
+  );
+
+  const created = normalizeHistoryItem(payload.data);
+  if (!created) {
+    throw new Error("Unable to save report history.");
+  }
+
+  return created;
+}
+
+export async function deleteReportHistory(id: string) {
+  await requestReportHistory(`/report-history/${id}`, { method: "DELETE" });
 }

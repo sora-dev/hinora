@@ -8,6 +8,8 @@ import { DashboardMobileNav, DashboardSidebar } from "./dashboard-nav";
 import { DashboardTopbar } from "./primitives";
 import type { NavVariant } from "./navigation";
 import { getHinoraSession, patchHinoraSession } from "./session";
+import { useResolvedNavVariant } from "./use-sidebar-permissions";
+import { useInboxUnreadCount } from "../inbox/use-inbox-unread-count";
 
 const shellDefaults: Record<
   NavVariant,
@@ -16,7 +18,6 @@ const shellDefaults: Record<
     profileName: string;
     profileRole: string;
     avatarText: string;
-    notificationCount: number;
   }
 > = {
   admin: {
@@ -24,14 +25,12 @@ const shellDefaults: Record<
     profileName: "Admin User",
     profileRole: "System Administrator",
     avatarText: "AU",
-    notificationCount: 2,
   },
   employee: {
     searchPlaceholder: "Search policies, manuals, or ask Hinora...",
     profileName: "Employee User",
     profileRole: "Employee",
     avatarText: "EU",
-    notificationCount: 3,
   },
 };
 
@@ -54,11 +53,12 @@ export default function DashboardShell({
   profileName,
   profileRole,
   avatarText,
-  notificationCount,
   secondaryActionIcon,
   secondaryActionLabel,
 }: DashboardShellProps) {
-  const defaults = shellDefaults[variant];
+  const resolvedVariant = useResolvedNavVariant(variant);
+  const defaults = shellDefaults[resolvedVariant];
+  const unreadCount = useInboxUnreadCount();
 
   useEffect(() => {
     const session = getHinoraSession();
@@ -98,12 +98,13 @@ export default function DashboardShell({
 
   return (
     <main className="grid min-h-screen bg-[var(--color-background)] text-slate-900 xl:grid-cols-[272px_minmax(0,1fr)]">
-      <DashboardSidebar variant={variant} />
+      <DashboardSidebar variant={resolvedVariant} />
 
       <section className="flex min-w-0 flex-col">
         <DashboardTopbar
           searchPlaceholder={searchPlaceholder ?? defaults.searchPlaceholder}
-          notificationCount={notificationCount ?? defaults.notificationCount}
+          notificationCount={unreadCount}
+          notificationsHref={`/${resolvedVariant}/notifications`}
           secondaryActionIcon={secondaryActionIcon}
           secondaryActionLabel={secondaryActionLabel}
           profileName={profileName ?? defaults.profileName}
@@ -112,7 +113,7 @@ export default function DashboardShell({
           showMenuButton
           className="bg-white/88"
         />
-        <DashboardMobileNav variant={variant} />
+        <DashboardMobileNav variant={resolvedVariant} />
 
         {children}
       </section>

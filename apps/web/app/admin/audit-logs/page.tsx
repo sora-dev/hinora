@@ -1,16 +1,11 @@
 import type { Metadata } from "next";
-import ComingSoon from "../../../components/dashboard/coming-soon";
+import AuditLogsExperience from "../../../components/audit-logs/audit-logs-experience";
 
 export const metadata: Metadata = {
   title: "Hinora | Audit Logs",
-  description: "Full audit trail for the Hinora AI Policy System",
+  description: "Track and review all system activities and changes in Hinora",
 };
 
 export default function AdminAuditLogsPage() {
-  return (
-    <ComingSoon
-      variant="admin"
-      description="A complete, exportable audit trail of every policy, user, and permission change made in Hinora."
-    />
-  );
+  return <AuditLogsExperience />;
 }

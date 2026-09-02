@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   Building2,
   Check,
@@ -19,23 +19,18 @@ import {
 import DashboardShell from "../dashboard/dashboard-shell";
 import { ModuleGuide } from "../dashboard/module-guide";
 import { DropdownSelect } from "../ui/dropdown-select";
+import {
+  defaultOrganizationSettings,
+  fetchOrganizationSettings,
+  normalizeOrganizationSettings,
+  persistOrganizationSettings,
+  type OrganizationSettings,
+} from "../../lib/organization-settings";
 import SettingsSecurityTab from "./settings-security-tab";
 import SettingsDocumentsTab from "./settings-documents-tab";
 import SettingsBackupTab from "./settings-backup-tab";
 
 type SettingsTab = "general" | "security" | "documents" | "system" | "backup";
-
-type GeneralSettings = {
-  organizationName: string;
-  organizationCode: string;
-  logoUrl: string | null;
-  timeZone: string;
-  dateFormat: string;
-  timeFormat: string;
-  language: string;
-  landingPage: string;
-  policyVisibility: string;
-};
 
 const tabs: Array<{ id: SettingsTab; label: string; Icon: LucideIcon }> = [
   { id: "general", label: "General", Icon: SlidersHorizontal },
@@ -44,18 +39,6 @@ const tabs: Array<{ id: SettingsTab; label: string; Icon: LucideIcon }> = [
   { id: "system", label: "System", Icon: Monitor },
   { id: "backup", label: "Backup & Recovery", Icon: DatabaseBackup },
 ];
-
-const defaultGeneralSettings: GeneralSettings = {
-  organizationName: "Rural Bank of Hinora",
-  organizationCode: "RBH",
-  logoUrl: "/branding/hinora-logo-icon.png",
-  timeZone: "asia-manila",
-  dateFormat: "mm-dd-yyyy",
-  timeFormat: "12h",
-  language: "en-ph",
-  landingPage: "dashboard",
-  policyVisibility: "assigned",
-};
 
 const timeZoneOptions = [
   { value: "asia-manila", label: "(UTC+08:00) Asia/Manila" },
@@ -120,12 +103,14 @@ function TextField({
   label,
   value,
   required,
+  placeholder,
   onChange,
 }: {
   id: string;
   label: string;
   value: string;
   required?: boolean;
+  placeholder?: string;
   onChange: (value: string) => void;
 }) {
   return (
@@ -135,10 +120,42 @@ function TextField({
       </FieldLabel>
       <input
         id={id}
-        value={value}
+        value={value ?? ""}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[var(--color-active-menu)] focus:ring-4 focus:ring-blue-100"
       />
+    </div>
+  );
+}
+
+function TextAreaField({
+  id,
+  label,
+  value,
+  hint,
+  rows = 3,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  hint?: string;
+  rows?: number;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <textarea
+        id={id}
+        value={value ?? ""}
+        rows={rows}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Street, city, province, postal code"
+        className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold leading-6 text-slate-900 outline-none transition focus:border-[var(--color-active-menu)] focus:ring-4 focus:ring-blue-100"
+      />
+      {hint ? <p className="mt-1.5 text-xs text-slate-500">{hint}</p> : null}
     </div>
   );
 }
@@ -178,18 +195,55 @@ function PlaceholderPanel({
 
 export default function SettingsExperience() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
-  const [settings, setSettings] = useState<GeneralSettings>(defaultGeneralSettings);
-  const [savedSettings, setSavedSettings] = useState<GeneralSettings>(defaultGeneralSettings);
+  const [settings, setSettings] = useState<OrganizationSettings>(defaultOrganizationSettings);
+  const [savedSettings, setSavedSettings] = useState<OrganizationSettings>(defaultOrganizationSettings);
   const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSettings() {
+      try {
+        const stored = await fetchOrganizationSettings();
+        if (cancelled) {
+          return;
+        }
+        setSettings(stored);
+        setSavedSettings(stored);
+      } catch (error) {
+        if (!cancelled) {
+          setBanner({
+            type: "error",
+            text: error instanceof Error ? error.message : "Unable to load organization settings.",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const formSettings = normalizeOrganizationSettings(settings);
+  const savedFormSettings = normalizeOrganizationSettings(savedSettings);
+
   const isDirty = useMemo(
-    () => JSON.stringify(settings) !== JSON.stringify(savedSettings),
-    [settings, savedSettings],
+    () => JSON.stringify(formSettings) !== JSON.stringify(savedFormSettings),
+    [formSettings, savedFormSettings],
   );
 
-  function updateSetting<K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) {
-    setSettings((current) => ({ ...current, [key]: value }));
+  function updateSetting<K extends keyof OrganizationSettings>(key: K, value: OrganizationSettings[K]) {
+    setSettings((current) => normalizeOrganizationSettings({ ...current, [key]: value }));
     setBanner(null);
   }
 
@@ -217,20 +271,46 @@ export default function SettingsExperience() {
     reader.readAsDataURL(file);
   }
 
-  function saveChanges() {
-    if (!settings.organizationName.trim() || !settings.organizationCode.trim()) {
+  async function saveChanges() {
+    if (!formSettings.organizationName.trim() || !formSettings.organizationCode.trim()) {
       setBanner({ type: "error", text: "Organization name and code are required." });
       return;
     }
 
-    setSavedSettings(settings);
-    setBanner({ type: "success", text: "Settings saved successfully." });
+    setIsSaving(true);
+    setBanner(null);
+
+    try {
+      const saved = await persistOrganizationSettings(formSettings);
+      setSettings(saved);
+      setSavedSettings(saved);
+      setBanner({ type: "success", text: "Settings saved to the database." });
+    } catch (error) {
+      setBanner({
+        type: "error",
+        text: error instanceof Error ? error.message : "Unable to save organization settings.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  function resetToDefault() {
-    setSettings(defaultGeneralSettings);
-    setSavedSettings(defaultGeneralSettings);
+  async function resetToDefault() {
+    setIsSaving(true);
     setBanner(null);
+
+    try {
+      const saved = await persistOrganizationSettings(defaultOrganizationSettings);
+      setSettings(saved);
+      setSavedSettings(saved);
+    } catch (error) {
+      setBanner({
+        type: "error",
+        text: error instanceof Error ? error.message : "Unable to reset organization settings.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -277,6 +357,7 @@ export default function SettingsExperience() {
               <h2 className="text-xl font-bold text-slate-900">General Settings</h2>
               <p className="mt-1 text-sm text-slate-500">
                 Configure general settings and preferences for your organization.
+                {isLoading ? " Loading saved values from the database..." : ""}
               </p>
             </div>
 
@@ -322,31 +403,51 @@ export default function SettingsExperience() {
                   id="organization-name"
                   label="Organization Name"
                   required
-                  value={settings.organizationName}
+                  value={formSettings.organizationName}
                   onChange={(value) => updateSetting("organizationName", value)}
                 />
                 <TextField
                   id="organization-code"
                   label="Organization Code"
                   required
-                  value={settings.organizationCode}
+                  value={formSettings.organizationCode}
                   onChange={(value) => updateSetting("organizationCode", value)}
                 />
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <TextAreaField
+                  id="organization-address"
+                  label="Organization Address"
+                  value={formSettings.organizationAddress}
+                  hint="Used on printed reports and official documents."
+                  onChange={(value) => updateSetting("organizationAddress", value)}
+                />
+                <div>
+                  <TextField
+                    id="organization-phone"
+                    label="Mobile / Phone Number"
+                    value={formSettings.organizationPhone}
+                    placeholder="+63 ..."
+                    onChange={(value) => updateSetting("organizationPhone", value)}
+                  />
+                  <p className="mt-1.5 text-xs text-slate-500">Shown on printed reports under the address.</p>
+                </div>
               </div>
 
               <div className="mt-5">
                 <FieldLabel required>Organization Logo</FieldLabel>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                    {settings.logoUrl ? (
+                    {formSettings.logoUrl ? (
                       <img
-                        src={settings.logoUrl}
+                        src={formSettings.logoUrl}
                         alt="Organization logo"
                         className="h-full w-full object-contain p-2"
                       />
                     ) : (
                       <span className="text-lg font-extrabold tracking-wide text-[var(--color-active-menu)]">
-                        {settings.organizationCode || "ORG"}
+                        {formSettings.organizationCode || "ORG"}
                       </span>
                     )}
                   </div>
@@ -373,7 +474,7 @@ export default function SettingsExperience() {
                       <button
                         type="button"
                         onClick={() => updateSetting("logoUrl", null)}
-                        disabled={!settings.logoUrl}
+                        disabled={!formSettings.logoUrl}
                         className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-white px-3.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -388,7 +489,7 @@ export default function SettingsExperience() {
                 <div>
                   <FieldLabel required>Time Zone</FieldLabel>
                   <DropdownSelect
-                    value={settings.timeZone}
+                    value={formSettings.timeZone}
                     onChange={(value) => updateSetting("timeZone", value || "asia-manila")}
                     options={timeZoneOptions}
                     aria-label="Time Zone"
@@ -397,7 +498,7 @@ export default function SettingsExperience() {
                 <div>
                   <FieldLabel required>Date Format</FieldLabel>
                   <DropdownSelect
-                    value={settings.dateFormat}
+                    value={formSettings.dateFormat}
                     onChange={(value) => updateSetting("dateFormat", value || "mm-dd-yyyy")}
                     options={dateFormatOptions}
                     aria-label="Date Format"
@@ -406,7 +507,7 @@ export default function SettingsExperience() {
                 <div>
                   <FieldLabel required>Time Format</FieldLabel>
                   <DropdownSelect
-                    value={settings.timeFormat}
+                    value={formSettings.timeFormat}
                     onChange={(value) => updateSetting("timeFormat", value || "12h")}
                     options={timeFormatOptions}
                     aria-label="Time Format"
@@ -415,7 +516,7 @@ export default function SettingsExperience() {
                 <div>
                   <FieldLabel required>Default Language</FieldLabel>
                   <DropdownSelect
-                    value={settings.language}
+                    value={formSettings.language}
                     onChange={(value) => updateSetting("language", value || "en-ph")}
                     options={languageOptions}
                     aria-label="Default Language"
@@ -424,7 +525,7 @@ export default function SettingsExperience() {
                 <div>
                   <FieldLabel required>Default Landing Page</FieldLabel>
                   <DropdownSelect
-                    value={settings.landingPage}
+                    value={formSettings.landingPage}
                     onChange={(value) => updateSetting("landingPage", value || "dashboard")}
                     options={landingPageOptions}
                     aria-label="Default Landing Page"
@@ -433,7 +534,7 @@ export default function SettingsExperience() {
                 <div>
                   <FieldLabel required>Default Policy Visibility</FieldLabel>
                   <DropdownSelect
-                    value={settings.policyVisibility}
+                    value={formSettings.policyVisibility}
                     onChange={(value) => updateSetting("policyVisibility", value || "assigned")}
                     options={policyVisibilityOptions}
                     aria-label="Default Policy Visibility"
@@ -448,20 +549,21 @@ export default function SettingsExperience() {
             <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={resetToDefault}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                onClick={() => void resetToDefault()}
+                disabled={isLoading || isSaving}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <RotateCcw className="h-4 w-4" />
                 Reset to Default
               </button>
               <button
                 type="button"
-                onClick={saveChanges}
-                disabled={!isDirty}
+                onClick={() => void saveChanges()}
+                disabled={!isDirty || isLoading || isSaving}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save className="h-4 w-4" />
-                Save Changes
+                {isSaving ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </section>

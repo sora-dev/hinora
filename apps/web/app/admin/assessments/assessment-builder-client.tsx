@@ -94,8 +94,10 @@ function fingerprint(settings: AssessmentSettings, questions: AssessmentQuestion
 
 export default function AssessmentBuilderClient({
   initialTab = "questions",
+  initialPolicyId,
 }: {
   initialTab?: BuilderTab;
+  initialPolicyId?: string;
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<BuilderTab>(initialTab);
@@ -151,7 +153,10 @@ export default function AssessmentBuilderClient({
           return;
         }
 
-        const preferred = options.find((option) => option.hasAssessment) ?? options[0];
+        const preferred =
+          options.find((option) => option.id === initialPolicyId) ??
+          options.find((option) => option.hasAssessment) ??
+          options[0];
         const snapshot = await fetchAssessment(preferred.id);
 
         if (!cancelled) {
@@ -171,7 +176,7 @@ export default function AssessmentBuilderClient({
     return () => {
       cancelled = true;
     };
-  }, [applySnapshot]);
+  }, [applySnapshot, initialPolicyId]);
 
   async function handlePolicyChange(policyId: string) {
     if (policyId === policy?.id) {
@@ -218,9 +223,17 @@ export default function AssessmentBuilderClient({
         current.map((option) => (option.id === snapshot.policy.id ? snapshot.policy : option)),
       );
       setStatusMessage(
-        `Saved ${snapshot.questions.length} ${
-          snapshot.questions.length === 1 ? "question" : "questions"
-        } to ${snapshot.policy.title}.`,
+        snapshot.questions.length === 0
+          ? `Saved a draft for ${snapshot.policy.title}. Add questions to send this assessment to assigned staff.`
+          : snapshot.policy.assignedCount > 0
+            ? `Saved and published ${snapshot.questions.length} ${
+                snapshot.questions.length === 1 ? "question" : "questions"
+              } to ${snapshot.policy.assignedCount} assigned ${
+                snapshot.policy.assignedCount === 1 ? "employee" : "employees"
+              } on ${snapshot.policy.title}.`
+            : `Saved and published ${snapshot.questions.length} ${
+                snapshot.questions.length === 1 ? "question" : "questions"
+              } for ${snapshot.policy.title}. Assign this policy under Policy Assignments so staff receive it.`,
       );
     } catch (error) {
       setSaveError(errorText(error, "Unable to save the assessment."));
@@ -442,7 +455,11 @@ export default function AssessmentBuilderClient({
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                {isSaving ? "Saving..." : "Save Assessment"}
+                {isSaving
+                  ? "Saving..."
+                  : questions.length > 0
+                    ? "Save & Publish"
+                    : "Save Assessment"}
               </button>
 
               <button

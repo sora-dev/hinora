@@ -95,7 +95,7 @@ export const employeeNavSections: readonly NavSection[] = [
     items: [
       { label: "My Compliance", href: "/employee/compliance", Icon: Shield, moduleKey: "My Compliance" },
       { label: "Bookmarks", href: "/employee/bookmarks", Icon: Bookmark, moduleKey: "Bookmarks" },
-      { label: "Notifications", href: "/employee/notifications", Icon: Bell, moduleKey: "Notifications", badge: "3" },
+      { label: "Notifications", href: "/employee/notifications", Icon: Bell, moduleKey: "Notifications" },
     ],
   },
   {
@@ -132,9 +132,13 @@ export function getUnifiedNavSections(hasAdminPortalAccess: boolean): readonly N
   const employeeExtraSections = employeeNavSections
     .map((section) => ({
       ...section,
-      items: section.items.filter(
-        (item) => item.moduleKey && employeeExtraModuleKeys.has(item.moduleKey),
-      ),
+      items: section.items
+        .filter((item) => item.moduleKey && employeeExtraModuleKeys.has(item.moduleKey))
+        .map((item) =>
+          item.moduleKey === "Notifications"
+            ? { ...item, href: "/admin/notifications" }
+            : item,
+        ),
     }))
     .filter((section) => section.items.length > 0);
 
@@ -150,12 +154,33 @@ export function getProfileHref(variant: NavVariant) {
 }
 
 export function getProfileHrefFromPathname(pathname: string | null) {
+  if (typeof window !== "undefined") {
+    try {
+      const session = JSON.parse(window.localStorage.getItem("hinora_session") ?? "null") as {
+        role?: string;
+      } | null;
+      if (session?.role === "ADMIN") {
+        return getProfileHref("admin");
+      }
+    } catch {
+      // Fall through to the path-based href.
+    }
+  }
+
   return pathname?.startsWith("/admin") ? getProfileHref("admin") : getProfileHref("employee");
 }
 
 export function isNavItemActive(href: string, pathname: string | null) {
   if (!pathname) {
     return false;
+  }
+
+  if (href === "/employee/compliance") {
+    return (
+      pathname === href ||
+      pathname.startsWith(`${href}/`) ||
+      pathname.startsWith("/employee/assessments/")
+    );
   }
 
   return pathname === href || pathname.startsWith(`${href}/`);

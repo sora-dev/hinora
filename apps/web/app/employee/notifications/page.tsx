@@ -1,16 +1,11 @@
 import type { Metadata } from "next";
-import ComingSoon from "../../../components/dashboard/coming-soon";
+import InboxExperience from "../../../components/inbox/inbox-experience";
 
 export const metadata: Metadata = {
   title: "Hinora | Notifications",
-  description: "Policy reminders and announcements in Hinora",
+  description: "View and manage your Hinora notifications",
 };
 
 export default function EmployeeNotificationsPage() {
-  return (
-    <ComingSoon
-      variant="employee"
-      description="Reminders, deadline alerts, and announcements about the policies that apply to you."
-    />
-  );
+  return <InboxExperience variant="employee" />;
 }
