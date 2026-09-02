@@ -635,7 +635,7 @@ function MyComplianceBody() {
 
             {filteredTasks.length === 0 ? (
               <EmptyState
-                icon={view === "acknowledgements" ? FileCheck : ListTodo}
+                icon={ListTodo}
                 title="No tasks here"
                 description="Assigned acknowledgements and assessments will show up in this list."
               />
