@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   loadProfileAvatar,
   PROFILE_AVATAR_CHANGED_EVENT,
+  resolveAvatarSrc,
 } from "../../lib/profile-avatar";
 import { getHinoraSession } from "./session";
 
@@ -12,7 +13,7 @@ export function useProfileAvatar() {
 
   useEffect(() => {
     function refresh() {
-      setAvatarUrl(loadProfileAvatar(getHinoraSession()?.userId));
+      setAvatarUrl(resolveAvatarSrc(loadProfileAvatar(getHinoraSession()?.userId)));
     }
 
     refresh();

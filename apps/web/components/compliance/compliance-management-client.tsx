@@ -12,7 +12,6 @@ import {
   Bell,
   BookOpenText,
   Calendar,
-  CalendarClock,
   ChartColumn,
   CheckCircle2,
   ChevronDown,
@@ -54,10 +53,12 @@ import {
   fetchComplianceAssessment,
   fetchComplianceEmployees,
   fetchComplianceOverview,
+  fetchComplianceActivity,
   fetchComplianceSummaries,
   formatComplianceDate,
   sharePct,
   type ComplianceActivityKind,
+  type ComplianceActivityEvent,
   type ComplianceAssessment,
   type ComplianceEmployee,
   type ComplianceOverview,
@@ -591,6 +592,34 @@ function activityPresentation(kind: ComplianceActivityKind) {
   return { Icon: Bell, tone: "bg-slate-100 text-slate-500" };
 }
 
+function timelinePresentation(kind: string) {
+  if (kind === "published") {
+    return { Icon: FileUp, tone: "bg-blue-50 text-[var(--color-active-menu)]" };
+  }
+  if (kind === "assignment") {
+    return { Icon: UserPlus, tone: "bg-violet-50 text-[var(--color-ai-accent)]" };
+  }
+  if (kind === "reading") {
+    return { Icon: BookOpenText, tone: "bg-emerald-50 text-[var(--color-success)]" };
+  }
+  if (kind === "notification") {
+    return { Icon: Bell, tone: "bg-amber-50 text-[var(--color-warning)]" };
+  }
+  if (kind === "escalation") {
+    return { Icon: Send, tone: "bg-rose-50 text-rose-600" };
+  }
+  if (kind === "assessment") {
+    return { Icon: ClipboardCheck, tone: "bg-cyan-50 text-cyan-700" };
+  }
+  if (kind === "completed") {
+    return { Icon: CheckCircle2, tone: "bg-emerald-50 text-[var(--color-success)]" };
+  }
+  if (kind === "certificate") {
+    return { Icon: Award, tone: "bg-violet-50 text-[var(--color-ai-accent)]" };
+  }
+  return { Icon: FileText, tone: "bg-slate-100 text-slate-600" };
+}
+
 function overviewStatusCopy(overview: ComplianceOverview) {
   if (overview.assigned === 0) {
     return "This policy is not assigned to anyone yet.";
@@ -978,146 +1007,108 @@ function ProgressCell({ pct, status }: { pct: number; status: EmployeeStatus }) 
   );
 }
 
-type ActivityEvent = {
-  id: string;
-  title: string;
-  description: string;
-  actor: string;
-  actorRole: string;
-  timestamp: string;
-  Icon: LucideIcon;
-  tone: string;
-  ipAddress?: string;
-  userAgent?: string;
-  changes?: string[];
-};
+type ActivityKindFilter = "all" | "assignment" | "assessment" | "certificate" | "notification" | "policy";
 
-const MOCK_ACTIVITY: ActivityEvent[] = [
-  {
-    id: "a1",
-    title: "Policy Published",
-    description: "Version 2.1 was published and is now active.",
-    actor: "Admin User",
-    actorRole: "Administrator",
-    timestamp: "Jul 15, 2026 · 9:12 AM",
-    Icon: FileUp,
-    tone: "bg-blue-50 text-[var(--color-active-menu)]",
-    ipAddress: "112.210.45.18",
-    userAgent: "Chrome 126.0.0.0 · macOS",
-    changes: [
-      "Policy version: 2.0 → 2.1",
-      "Sections updated: 3",
-      "Attachments added: 1",
-    ],
-  },
-  {
-    id: "a2",
-    title: "Policy Assigned",
-    description: "Assigned to 200 employees across 5 departments.",
-    actor: "Admin User",
-    actorRole: "Administrator",
-    timestamp: "Jul 15, 2026 · 9:40 AM",
-    Icon: UserPlus,
-    tone: "bg-violet-50 text-[var(--color-ai-accent)]",
-    ipAddress: "112.210.45.18",
-    userAgent: "Chrome 126.0.0.0 · macOS",
-    changes: ["Assignments created: 200", "Departments covered: 5"],
-  },
-  {
-    id: "a3",
-    title: "Reading Completed",
-    description: "28 employees completed reading the policy.",
-    actor: "System",
-    actorRole: "Auto Update",
-    timestamp: "Jul 20, 2026 · 6:00 PM",
-    Icon: BookOpenText,
-    tone: "bg-emerald-50 text-[var(--color-success)]",
-  },
-  {
-    id: "a4",
-    title: "Notification Sent",
-    description: "First reminder sent to 156 pending employees.",
-    actor: "System",
-    actorRole: "Auto Notification",
-    timestamp: "Jul 23, 2026 · 8:00 AM",
-    Icon: Bell,
-    tone: "bg-amber-50 text-[var(--color-warning)]",
-  },
-  {
-    id: "a5",
-    title: "Assessment Attempted",
-    description: "32 employees attempted the assessment.",
-    actor: "System",
-    actorRole: "Auto Update",
-    timestamp: "Jul 25, 2026 · 11:20 AM",
-    Icon: ClipboardCheck,
-    tone: "bg-cyan-50 text-cyan-700",
-  },
-  {
-    id: "a6",
-    title: "Employees Passed",
-    description: "45 employees passed the assessment.",
-    actor: "System",
-    actorRole: "Auto Update",
-    timestamp: "Jul 25, 2026 · 5:45 PM",
-    Icon: CheckCircle2,
-    tone: "bg-emerald-50 text-[var(--color-success)]",
-  },
-  {
-    id: "a7",
-    title: "Due Date Extended",
-    description: "Due date extended from Aug 25 to Aug 30.",
-    actor: "Maria Santos",
-    actorRole: "Compliance Officer",
-    timestamp: "Jul 28, 2026 · 2:15 PM",
-    Icon: CalendarClock,
-    tone: "bg-blue-50 text-[var(--color-active-menu)]",
-    ipAddress: "112.198.22.11",
-    userAgent: "Chrome 126.0.0.0 · Windows",
-    changes: ["Due date: Aug 25, 2026 → Aug 30, 2026"],
-  },
-  {
-    id: "a8",
-    title: "Escalation Sent",
-    description: "Escalation email sent to 12 overdue employees' managers.",
-    actor: "System",
-    actorRole: "Auto Notification",
-    timestamp: "Aug 02, 2026 · 9:00 AM",
-    Icon: Send,
-    tone: "bg-rose-50 text-rose-600",
-  },
-  {
-    id: "a9",
-    title: "Certificates Issued",
-    description: "Certificates generated for 78 employees.",
-    actor: "System",
-    actorRole: "Auto Update",
-    timestamp: "Aug 10, 2026 · 4:30 PM",
-    Icon: Award,
-    tone: "bg-violet-50 text-[var(--color-ai-accent)]",
-  },
-  {
-    id: "a10",
-    title: "Policy Updated",
-    description: "Version 2.1.1 uploaded. Minor content updates.",
-    actor: "Admin User",
-    actorRole: "Administrator",
-    timestamp: "Aug 15, 2026 · 10:05 AM",
-    Icon: FileText,
-    tone: "bg-slate-100 text-slate-600",
-    ipAddress: "112.210.45.18",
-    userAgent: "Chrome 126.0.0.0 · macOS",
-    changes: ["Policy version: 2.1 → 2.1.1", "Minor content updates applied"],
-  },
-];
+function matchesActivityFilter(kind: string, filter: ActivityKindFilter) {
+  if (filter === "all") return true;
+  if (filter === "assignment") return kind === "assignment";
+  if (filter === "assessment") return kind === "assessment" || kind === "completed";
+  if (filter === "certificate") return kind === "certificate";
+  if (filter === "notification") return kind === "notification" || kind === "escalation";
+  return kind === "published" || kind === "update";
+}
 
-function ActivityTab() {
-  const [selectedId, setSelectedId] = useState(MOCK_ACTIVITY[0]?.id ?? "");
+function ActivityTab({ policy }: { policy: PolicyListItem }) {
+  const [events, setEvents] = useState<ComplianceActivityEvent[]>([]);
+  const [related, setRelated] = useState({
+    assignments: 0,
+    assessmentAttempts: 0,
+    certificatesIssued: 0,
+    notificationsSent: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState("");
   const [visibleCount, setVisibleCount] = useState(8);
+  const [kindFilter, setKindFilter] = useState<ActivityKindFilter>("all");
+  const [range, setRange] = useState<"30d" | "all">("all");
 
-  const selected =
-    MOCK_ACTIVITY.find((event) => event.id === selectedId) ?? MOCK_ACTIVITY[0];
-  const visibleEvents = MOCK_ACTIVITY.slice(0, visibleCount);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    setSelectedId("");
+    setVisibleCount(8);
+    setKindFilter("all");
+
+    void fetchComplianceActivity(policy.id)
+      .then((payload) => {
+        if (cancelled) return;
+        setEvents(payload.events);
+        setRelated(payload.related);
+        setSelectedId(payload.events[0]?.id ?? "");
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Unable to load activity.");
+        setEvents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [policy.id]);
+
+  const filteredEvents = useMemo(() => {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return events.filter((event) => {
+      if (!matchesActivityFilter(event.kind, kindFilter)) return false;
+      if (range === "30d" && new Date(event.timestamp).getTime() < cutoff) return false;
+      return true;
+    });
+  }, [events, kindFilter, range]);
+
+  useEffect(() => {
+    if (filteredEvents.some((event) => event.id === selectedId)) return;
+    setSelectedId(filteredEvents[0]?.id ?? "");
+  }, [filteredEvents, selectedId]);
+
+  const selected = filteredEvents.find((event) => event.id === selectedId) ?? filteredEvents[0];
+  const visibleEvents = filteredEvents.slice(0, visibleCount);
+  const rangeLabel = useMemo(() => {
+    if (filteredEvents.length === 0) return "No dates";
+    const times = filteredEvents.map((event) => new Date(event.timestamp).getTime());
+    const start = new Date(Math.min(...times));
+    const end = new Date(Math.max(...times));
+    const fmt = (value: Date) =>
+      value.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return `${fmt(start)} – ${fmt(end)}`;
+  }, [filteredEvents]);
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-16 text-center text-sm text-slate-500">
+        Loading activity...
+      </div>
+    );
+  }
+
+  if (error) {
+    return <EmptyState icon={Clock3} title="Unable to load activity" description={error} />;
+  }
+
+  if (events.length === 0) {
+    return (
+      <EmptyState
+        icon={Clock3}
+        title="No activity yet"
+        description="Assignments, assessments, certificates, and notifications for this policy will appear here."
+      />
+    );
+  }
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.9fr)]">
@@ -1130,67 +1121,89 @@ function ActivityTab() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <DropdownSelect
+              value={kindFilter}
+              onChange={(value) => {
+                setKindFilter((value as ActivityKindFilter) || "all");
+                setVisibleCount(8);
+              }}
+              options={[
+                { value: "all", label: "All events" },
+                { value: "policy", label: "Policy" },
+                { value: "assignment", label: "Assignments" },
+                { value: "assessment", label: "Assessments" },
+                { value: "certificate", label: "Certificates" },
+                { value: "notification", label: "Notifications" },
+              ]}
+              size="sm"
+              className="w-[10.5rem]"
+              aria-label="Filter activity"
+            />
             <button
               type="button"
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700"
-            >
-              <Filter className="h-4 w-4" />
-              <span>Filter</span>
-            </button>
-            <button
-              type="button"
+              onClick={() => {
+                setRange((current) => (current === "all" ? "30d" : "all"));
+                setVisibleCount(8);
+              }}
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700"
             >
               <Calendar className="h-4 w-4" />
-              <span>Jul 15, 2026 – Aug 16, 2026</span>
+              <span>{range === "30d" ? "Last 30 days" : rangeLabel}</span>
             </button>
           </div>
         </div>
 
-        <ol className="divide-y divide-slate-100">
-          {visibleEvents.map((event) => {
-            const EventIcon = event.Icon;
-            const active = event.id === selected?.id;
-            return (
-              <li key={event.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(event.id)}
-                  className={cx(
-                    "flex w-full items-start gap-3 px-4 py-4 text-left transition",
-                    active ? "bg-blue-50/70" : "hover:bg-slate-50/80",
-                  )}
-                >
-                  <span
+        {filteredEvents.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-slate-500">
+            No activity matches the current filters.
+          </div>
+        ) : (
+          <ol className="divide-y divide-slate-100">
+            {visibleEvents.map((event) => {
+              const presentation = timelinePresentation(event.kind);
+              const EventIcon = presentation.Icon;
+              const active = event.id === selected?.id;
+              return (
+                <li key={event.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(event.id)}
                     className={cx(
-                      "mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-                      event.tone,
+                      "flex w-full items-start gap-3 px-4 py-4 text-left transition",
+                      active ? "bg-blue-50/70" : "hover:bg-slate-50/80",
                     )}
                   >
-                    <EventIcon className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="text-sm font-bold text-slate-900">{event.title}</div>
-                      <div className="text-xs text-slate-400">{event.timestamp}</div>
+                    <span
+                      className={cx(
+                        "mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                        presentation.tone,
+                      )}
+                    >
+                      <EventIcon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="text-sm font-bold text-slate-900">{event.title}</div>
+                        <div className="text-xs text-slate-400">{event.timestampLabel}</div>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-600">{event.description}</p>
+                      <div className="mt-2 text-xs font-semibold text-slate-500">
+                        {event.actor}
+                        <span className="font-medium text-slate-400"> · {event.actorRole}</span>
+                      </div>
                     </div>
-                    <p className="mt-1 text-sm text-slate-600">{event.description}</p>
-                    <div className="mt-2 text-xs font-semibold text-slate-500">
-                      {event.actor}
-                      <span className="font-medium text-slate-400"> · {event.actorRole}</span>
-                    </div>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        )}
 
-        {visibleCount < MOCK_ACTIVITY.length ? (
+        {visibleCount < filteredEvents.length ? (
           <div className="border-t border-slate-200 px-4 py-3">
             <button
               type="button"
-              onClick={() => setVisibleCount(MOCK_ACTIVITY.length)}
+              onClick={() => setVisibleCount(filteredEvents.length)}
               className="text-sm font-bold text-[var(--color-active-menu)] hover:underline"
             >
               Load more activities
@@ -1206,14 +1219,17 @@ function ActivityTab() {
               <span
                 className={cx(
                   "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                  selected.tone,
+                  timelinePresentation(selected.kind).tone,
                 )}
               >
-                <selected.Icon className="h-5 w-5" />
+                {(() => {
+                  const Icon = timelinePresentation(selected.kind).Icon;
+                  return <Icon className="h-5 w-5" />;
+                })()}
               </span>
               <div className="min-w-0">
                 <h3 className="text-sm font-bold text-slate-900">{selected.title}</h3>
-                <div className="mt-1 text-xs text-slate-400">{selected.timestamp}</div>
+                <div className="mt-1 text-xs text-slate-400">{selected.timestampLabel}</div>
               </div>
             </div>
 
@@ -1286,10 +1302,10 @@ function ActivityTab() {
           <h3 className="text-sm font-bold text-slate-900">Related Records</h3>
           <ul className="mt-4 space-y-2.5">
             {[
-              { label: "Assignments", count: 5 },
-              { label: "Assessment Attempts", count: 32 },
-              { label: "Certificates Issued", count: 78 },
-              { label: "Notifications Sent", count: 3 },
+              { label: "Assignments", count: related.assignments },
+              { label: "Assessment Attempts", count: related.assessmentAttempts },
+              { label: "Certificates Issued", count: related.certificatesIssued },
+              { label: "Notifications Sent", count: related.notificationsSent },
             ].map((item) => (
               <li
                 key={item.label}
@@ -1300,13 +1316,13 @@ function ActivityTab() {
               </li>
             ))}
           </ul>
-          <button
-            type="button"
+          <Link
+            href={`/admin/policy-library/${policy.id}`}
             className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             <Eye className="h-4 w-4" />
             <span>View Policy Version</span>
-          </button>
+          </Link>
         </section>
       </div>
     </div>
@@ -2351,8 +2367,8 @@ export default function ComplianceManagementClient() {
     detailBody = <ComplianceNotificationsTab policyId={selectedPolicy.id} />;
   } else if (activeTab === "certificates" && selectedPolicy) {
     detailBody = <ComplianceCertificatesTab policy={selectedPolicy} />;
-  } else if (activeTab === "activity") {
-    detailBody = <ActivityTab />;
+  } else if (activeTab === "activity" && selectedPolicy) {
+    detailBody = <ActivityTab policy={selectedPolicy} />;
   } else {
     detailBody = null;
   }

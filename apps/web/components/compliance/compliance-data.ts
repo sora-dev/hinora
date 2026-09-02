@@ -237,6 +237,54 @@ export async function fetchComplianceOverview(policyId: string): Promise<Complia
   return payload.data;
 }
 
+export type ComplianceActivityKindFilter =
+  | "published"
+  | "assignment"
+  | "reading"
+  | "notification"
+  | "escalation"
+  | "assessment"
+  | "completed"
+  | "certificate"
+  | "update";
+
+export type ComplianceActivityEvent = {
+  id: string;
+  kind: ComplianceActivityKindFilter | string;
+  title: string;
+  description: string;
+  actor: string;
+  actorRole: string;
+  timestamp: string;
+  timestampLabel: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  changes: string[];
+};
+
+export type ComplianceActivityPayload = {
+  policyId: string;
+  policyTitle: string;
+  policyVersion: string;
+  events: ComplianceActivityEvent[];
+  related: {
+    assignments: number;
+    assessmentAttempts: number;
+    certificatesIssued: number;
+    notificationsSent: number;
+  };
+};
+
+export async function fetchComplianceActivity(policyId: string): Promise<ComplianceActivityPayload> {
+  const response = await fetch(`${API_BASE_URL}/compliance/policies/${policyId}/activity`);
+  if (!response.ok) {
+    const errorBody = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(errorBody?.message ?? "Unable to load compliance activity.");
+  }
+  const payload = (await response.json()) as { data: ComplianceActivityPayload };
+  return payload.data;
+}
+
 export async function fetchComplianceNotifications(
   policyId: string,
 ): Promise<ComplianceNotificationsPayload> {

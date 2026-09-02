@@ -49,6 +49,11 @@ export class ComplianceController {
     return this.complianceService.getOverview(policyId);
   }
 
+  @Get('policies/:policyId/activity')
+  getActivity(@Param('policyId') policyId: string) {
+    return this.complianceService.getActivity(policyId);
+  }
+
   @Get('policies/:policyId/employees')
   getEmployees(@Param('policyId') policyId: string) {
     return this.complianceService.getEmployees(policyId);

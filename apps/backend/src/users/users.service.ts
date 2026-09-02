@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { Prisma, Role, UserStatus, type User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 import { RolesPermissionsService } from '../roles-permissions/roles-permissions.service';
@@ -30,7 +32,34 @@ type CreateUserInput = {
   roleTitle: string;
   status: UserStatus;
 };
-type UpdateUserInput = Partial<Omit<CreateUserInput, 'password'>>;
+type UpdateUserInput = Partial<Omit<CreateUserInput, 'password'>> & {
+  avatarUrl?: string | null;
+  preferences?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+};
+
+const avatarMimeExtensions: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+const preferenceKeys = [
+  'theme',
+  'primaryColor',
+  'fontSize',
+  'compactMode',
+  'reduceMotion',
+  'language',
+  'dateFormat',
+  'timeFormat',
+  'timeZone',
+  'firstDayOfWeek',
+  'defaultDashboardView',
+  'itemsPerPage',
+  'showQuickActions',
+] as const;
 
 type UserWithRelations = User & {
   departmentRef: { id: string; name: string; code: string } | null;
@@ -269,6 +298,23 @@ export class UsersService {
       await this.rolesPermissionsService.assertRoleTitleExists(input.roleTitle);
     }
 
+    if (input.preferences !== undefined && input.preferences !== Prisma.JsonNull) {
+      const existing = await this.prisma.user.findUnique({
+        where: { id },
+        select: { preferences: true },
+      });
+      const current =
+        existing?.preferences &&
+        typeof existing.preferences === 'object' &&
+        !Array.isArray(existing.preferences)
+          ? (existing.preferences as Prisma.InputJsonObject)
+          : {};
+      input.preferences = {
+        ...current,
+        ...(input.preferences as Prisma.InputJsonObject),
+      };
+    }
+
     try {
       const user = await this.prisma.user.update({
         where: { id },
@@ -350,6 +396,52 @@ export class UsersService {
     return this.toUserResponse(user);
   }
 
+  async uploadAvatar(id: string, file?: Express.Multer.File) {
+    await this.ensureUserExists(id);
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('An image file is required.');
+    }
+
+    const mime = file.mimetype.toLowerCase();
+    const extension = avatarMimeExtensions[mime];
+    if (!extension) {
+      throw new BadRequestException(
+        'Avatar must be a JPEG, PNG, WebP, or GIF image.',
+      );
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      throw new BadRequestException('Photo must be 2 MB or smaller.');
+    }
+
+    const directory = join(process.cwd(), 'uploads', 'avatars');
+    await mkdir(directory, { recursive: true });
+    const entries = await readdir(directory).catch(() => [] as string[]);
+    await Promise.all(
+      entries
+        .filter((name) => name.startsWith(`${id}.`))
+        .map((name) => unlink(join(directory, name)).catch(() => undefined)),
+    );
+
+    const fileName = `${id}.${extension}`;
+    await writeFile(join(directory, fileName), file.buffer);
+    const avatarUrl = `/uploads/avatars/${fileName}`;
+
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: { avatarUrl },
+      include: userInclude,
+    });
+
+    void this.activityService.recordKind(id, UserActivityKind.PROFILE, {
+      title: 'Profile Photo Updated',
+      description: 'A new profile photo was uploaded',
+      extra: 'The profile photo was saved to this account.',
+    });
+
+    return this.toUserResponse(user);
+  }
+
   private toUserResponse(user: UserWithRelations | User) {
     const departmentRef =
       'departmentRef' in user ? user.departmentRef : null;
@@ -386,6 +478,8 @@ export class UsersService {
       status: user.status,
       mustChangePassword: user.mustChangePassword,
       lastLoginAt: user.lastLoginAt,
+      avatarUrl: user.avatarUrl,
+      preferences: user.preferences,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -576,7 +670,64 @@ export class UsersService {
       input.status = this.parseRequiredStatus(body.status);
     }
 
+    if (body.avatarUrl !== undefined) {
+      input.avatarUrl = this.parseAvatarUrl(body.avatarUrl);
+    }
+
+    if (body.preferences !== undefined) {
+      input.preferences = this.parsePreferences(body.preferences);
+    }
+
     return input;
+  }
+
+  private parseAvatarUrl(value: unknown) {
+    if (value === null || value === '') {
+      return null;
+    }
+
+    if (typeof value !== 'string') {
+      throw new BadRequestException('avatarUrl must be a string.');
+    }
+
+    const avatarUrl = value.trim();
+    if (!avatarUrl) {
+      return null;
+    }
+
+    if (avatarUrl.startsWith('data:')) {
+      throw new BadRequestException(
+        'Upload the photo as a file instead of a data URL.',
+      );
+    }
+
+    if (avatarUrl.length > 2048) {
+      throw new BadRequestException('avatarUrl is too long.');
+    }
+
+    return avatarUrl;
+  }
+
+  private parsePreferences(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+    if (value === null) {
+      return Prisma.JsonNull;
+    }
+
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw new BadRequestException('preferences must be an object.');
+    }
+
+    const source = value as Record<string, unknown>;
+    const preferences: Record<string, string | boolean> = {};
+
+    for (const key of preferenceKeys) {
+      const next = source[key];
+      if (typeof next === 'string' || typeof next === 'boolean') {
+        preferences[key] = next;
+      }
+    }
+
+    return preferences;
   }
 
   private async resolveReportsToUserId(value: unknown) {

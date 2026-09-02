@@ -56,7 +56,21 @@ import {
 } from "./profile-activity";
 import { getApiBaseUrl } from "../../lib/api-base-url";
 import { collectDeviceClientInfo } from "../../lib/device-info";
-import { loadProfileAvatar, saveProfileAvatar } from "../../lib/profile-avatar";
+import {
+  loadProfileAvatar,
+  resolveAvatarSrc,
+  saveProfileAvatar,
+  uploadProfileAvatar,
+} from "../../lib/profile-avatar";
+import {
+  applyDisplayPreferences,
+  defaultProfilePreferences as defaultPreferences,
+  loadProfilePreferences,
+  parseProfilePreferences,
+  persistProfilePreferences,
+  profilePrimaryColors as primaryColors,
+  saveProfilePreferences,
+} from "../../lib/profile-preferences";
 import { useTheme } from "../theme/theme-provider";
 
 type ProfileTab =
@@ -152,13 +166,6 @@ function isActiveNow(value: string) {
   return Date.now() - new Date(value).getTime() < 5 * 60_000;
 }
 
-const recentSecurityActivity = [
-  { id: "1", title: "New sign-in on Windows Desktop", when: "Today" },
-  { id: "2", title: "New sign-in on iPhone 14 Pro", when: "Yesterday" },
-  { id: "3", title: "Password changed", when: "May 20, 2026" },
-  { id: "4", title: "MFA enabled", when: "May 10, 2026" },
-];
-
 const staySecureTips: Array<{ title: string; Icon: LucideIcon }> = [
   { title: "Use a strong password", Icon: KeyRound },
   { title: "Enable MFA", Icon: Fingerprint },
@@ -172,34 +179,6 @@ const themeOptions: Array<{ id: ThemeOption; label: string; Icon: LucideIcon }> 
   { id: "dark", label: "Dark", Icon: Moon },
   { id: "system", label: "System", Icon: Monitor },
 ];
-
-const primaryColors = [
-  { id: "blue", label: "Blue", value: "#2563eb" },
-  { id: "indigo", label: "Indigo", value: "#1e3a8a" },
-  { id: "purple", label: "Purple", value: "#7c3aed" },
-  { id: "green", label: "Green", value: "#16a34a" },
-  { id: "cyan", label: "Cyan", value: "#0891b2" },
-  { id: "orange", label: "Orange", value: "#ea580c" },
-  { id: "red", label: "Red", value: "#dc2626" },
-  { id: "pink", label: "Pink", value: "#db2777" },
-  { id: "grey", label: "Grey", value: "#64748b" },
-];
-
-const defaultPreferences = {
-  theme: "light" as ThemeOption,
-  primaryColor: "blue",
-  fontSize: "Medium (Default)",
-  compactMode: false,
-  reduceMotion: false,
-  language: "English (United States)",
-  dateFormat: "MMM DD, YYYY (Aug 05, 2026)",
-  timeFormat: "12-hour (1:30 PM)",
-  timeZone: "(GMT+08:00) Asia/Manila",
-  firstDayOfWeek: "Monday",
-  defaultDashboardView: "My Compliance Overview",
-  itemsPerPage: "20 items",
-  showQuickActions: true,
-};
 
 const preferenceTips = [
   {
@@ -289,6 +268,9 @@ type ProfileUser = {
   status: string;
   lastLoginAt: string | null;
   createdAt: string;
+  updatedAt?: string;
+  avatarUrl?: string | null;
+  preferences?: unknown;
 };
 
 const SESSION_STORAGE_KEY = "hinora_session";
@@ -468,13 +450,20 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
   const [profileMessage, setProfileMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null,
   );
+  const [preferencesMessage, setPreferencesMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [isSavingPreferences, setIsSavingPreferences] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [currentSession, setCurrentSession] = useState<SessionRecord | null>(null);
   const [otherSessions, setOtherSessions] = useState<SessionRecord[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionActionId, setSessionActionId] = useState<string | null>(null);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
-  const activityState = useAccountActivity(activeTab === "activity");
+  const activityState = useAccountActivity(true);
+  const lastSavedPreferences = useRef("");
+  const preferencesReady = useRef(false);
   const [profileForm, setProfileForm] = useState({
     firstName: "",
     lastName: "",
@@ -493,7 +482,11 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
     key: K,
     value: (typeof defaultPreferences)[K],
   ) => {
-    setPreferences((prev) => ({ ...prev, [key]: value }));
+    setPreferences((prev) => {
+      const next = { ...prev, [key]: value };
+      applyDisplayPreferences(next);
+      return next;
+    });
     if (key === "theme") {
       setTheme(value as ThemeOption);
     }
@@ -540,9 +533,14 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
 
     const userId = session.userId?.trim();
     if (userId) {
+      const cachedPreferences = loadProfilePreferences(userId);
+      if (cachedPreferences) {
+        setPreferences(cachedPreferences);
+        applyDisplayPreferences(cachedPreferences);
+      }
       const storedAvatar = loadProfileAvatar(userId);
       if (storedAvatar) {
-        setAvatarUrl(storedAvatar);
+        setAvatarUrl(resolveAvatarSrc(storedAvatar));
       }
     }
 
@@ -550,12 +548,13 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
       return;
     }
 
+    const profileUserId = userId;
     let cancelled = false;
 
     async function loadProfile() {
       try {
         const apiBaseUrl = getApiBaseUrl();
-        const response = await fetch(`${apiBaseUrl}/users/${userId}`);
+        const response = await fetch(`${apiBaseUrl}/users/${profileUserId}`);
         if (!response.ok) {
           throw new Error("Unable to load profile.");
         }
@@ -563,8 +562,42 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
         if (cancelled) return;
         setProfileUser(user);
         applyUserToForm(user);
+        const nextPreferences = parseProfilePreferences(user.preferences);
+        lastSavedPreferences.current = JSON.stringify(nextPreferences);
+        preferencesReady.current = true;
+        setPreferences(nextPreferences);
+        saveProfilePreferences(profileUserId, nextPreferences);
+        applyDisplayPreferences(nextPreferences);
+        if (nextPreferences.theme !== theme) {
+          setTheme(nextPreferences.theme);
+        }
+
+        if (user.avatarUrl) {
+          const stored = user.updatedAt
+            ? `${user.avatarUrl}?v=${encodeURIComponent(user.updatedAt)}`
+            : user.avatarUrl;
+          saveProfileAvatar(profileUserId, stored);
+          setAvatarUrl(resolveAvatarSrc(stored));
+        } else {
+          const storedAvatar = loadProfileAvatar(profileUserId);
+          if (storedAvatar?.startsWith("data:")) {
+            try {
+              const blob = await fetch(storedAvatar).then((response) => response.blob());
+              const file = new File([blob], "avatar.png", {
+                type: blob.type || "image/png",
+              });
+              const uploaded = await uploadProfileAvatar(profileUserId, file);
+              if (!cancelled && uploaded) {
+                setAvatarUrl(resolveAvatarSrc(uploaded));
+              }
+            } catch {
+              setAvatarUrl(resolveAvatarSrc(storedAvatar));
+            }
+          }
+        }
       } catch {
         if (!cancelled) {
+          preferencesReady.current = true;
           setProfileMessage({ type: "error", text: "Unable to load your profile details." });
         }
       }
@@ -713,7 +746,16 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
   }, [profileForm.firstName, profileForm.lastName, profileName]);
 
   const securityActivity = useMemo(() => {
-    const signIns = [currentSession, ...otherSessions]
+    const fromActivity = activityState.activities.slice(0, 6).map((item) => ({
+      id: item.id,
+      title: item.title,
+      when: formatFirstLogin(item.dateValue),
+    }));
+    if (fromActivity.length > 0) {
+      return fromActivity;
+    }
+
+    return [currentSession, ...otherSessions]
       .filter((session): session is SessionRecord => Boolean(session))
       .sort(
         (left, right) =>
@@ -725,9 +767,7 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
         title: `New sign-in on ${session.deviceName}`,
         when: formatFirstLogin(session.firstLoginAt),
       }));
-
-    return signIns.length > 0 ? signIns : recentSecurityActivity;
-  }, [currentSession, otherSessions]);
+  }, [activityState.activities, currentSession, otherSessions]);
 
   function updateProfileField<K extends keyof typeof profileForm>(key: K, value: (typeof profileForm)[K]) {
     setProfileForm((current) => ({ ...current, [key]: value }));
@@ -872,19 +912,90 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : null;
-      if (!result) return;
-      setAvatarUrl(result);
-      const userId = profileUser?.id ?? getHinoraSession()?.userId;
-      if (userId) {
-        saveProfileAvatar(userId, result);
+    const userId = profileUser?.id ?? getHinoraSession()?.userId;
+    if (!userId) {
+      setProfileMessage({ type: "error", text: "Sign in again to update your photo." });
+      return;
+    }
+
+    const preview = URL.createObjectURL(file);
+    setAvatarUrl(preview);
+
+    void (async () => {
+      try {
+        const uploaded = await uploadProfileAvatar(userId, file);
+        setAvatarUrl(resolveAvatarSrc(uploaded) ?? preview);
+        setProfileMessage({ type: "success", text: "Profile photo updated." });
+      } catch (error: unknown) {
+        URL.revokeObjectURL(preview);
+        setAvatarUrl(resolveAvatarSrc(loadProfileAvatar(userId)));
+        setProfileMessage({
+          type: "error",
+          text: error instanceof Error ? error.message : "Unable to update profile photo.",
+        });
       }
-      setProfileMessage({ type: "success", text: "Profile photo updated." });
-    };
-    reader.readAsDataURL(file);
+    })();
   }
+
+  async function savePreferences(
+    next = preferences,
+    options?: { silent?: boolean },
+  ) {
+    const userId = getHinoraSession()?.userId?.trim() ?? profileUser?.id;
+    if (!userId) {
+      if (!options?.silent) {
+        setPreferencesMessage({
+          type: "error",
+          text: "Sign in again to save preferences.",
+        });
+      }
+      return;
+    }
+
+    const serialized = JSON.stringify(next);
+    if (serialized === lastSavedPreferences.current) {
+      return;
+    }
+
+    if (!options?.silent) {
+      setIsSavingPreferences(true);
+      setPreferencesMessage(null);
+    }
+
+    try {
+      const saved = await persistProfilePreferences(userId, next);
+      lastSavedPreferences.current = JSON.stringify(saved);
+      setPreferences(saved);
+      applyDisplayPreferences(saved);
+      if (saved.theme !== theme) {
+        setTheme(saved.theme);
+      }
+      if (!options?.silent) {
+        setPreferencesMessage({ type: "success", text: "Preferences saved." });
+      }
+    } catch (error: unknown) {
+      if (!options?.silent) {
+        setPreferencesMessage({
+          type: "error",
+          text: error instanceof Error ? error.message : "Unable to save preferences.",
+        });
+      }
+    } finally {
+      if (!options?.silent) {
+        setIsSavingPreferences(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!preferencesReady.current) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void savePreferences(preferences, { silent: true });
+    }, 800);
+    return () => window.clearTimeout(timeout);
+  }, [preferences]);
 
   const personalComplete = Boolean(
     profileForm.firstName.trim() &&
@@ -1878,15 +1989,23 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
 
                 <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
                   <h3 className="text-base font-bold text-slate-900">Recent Security Activity</h3>
-                  <ol className="relative mt-5 space-y-4 border-l border-slate-200 pl-4">
-                    {securityActivity.map((item) => (
-                      <li key={item.id} className="relative">
-                        <span className="absolute -left-[1.35rem] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[var(--color-active-menu)] shadow" />
-                        <div className="text-sm font-semibold text-slate-800">{item.title}</div>
-                        <div className="mt-0.5 text-xs font-medium text-slate-500">{item.when}</div>
-                      </li>
-                    ))}
-                  </ol>
+                  {securityActivity.length > 0 ? (
+                    <ol className="relative mt-5 space-y-4 border-l border-slate-200 pl-4">
+                      {securityActivity.map((item) => (
+                        <li key={item.id} className="relative">
+                          <span className="absolute -left-[1.35rem] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[var(--color-active-menu)] shadow" />
+                          <div className="text-sm font-semibold text-slate-800">{item.title}</div>
+                          <div className="mt-0.5 text-xs font-medium text-slate-500">{item.when}</div>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="mt-4 text-sm leading-6 text-slate-500">
+                      {activityState.loading
+                        ? "Loading recent sign-ins and security events..."
+                        : "No recent security activity yet. Sign-ins, password changes, and device updates will appear here."}
+                    </p>
+                  )}
                 </section>
 
                 <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
@@ -1984,10 +2103,35 @@ export default function ProfileExperience({ variant }: ProfileExperienceProps) {
                   <p className="mt-2 text-sm leading-5 text-slate-500">
                     Restore all preferences to their defaults.
                   </p>
+                  {preferencesMessage ? (
+                    <p
+                      className={cx(
+                        "mt-3 text-sm font-semibold",
+                        preferencesMessage.type === "success" ? "text-emerald-600" : "text-red-600",
+                      )}
+                    >
+                      {preferencesMessage.text}
+                    </p>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={() => setPreferences(defaultPreferences)}
-                    className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                    onClick={() => {
+                      void savePreferences(preferences);
+                    }}
+                    disabled={isSavingPreferences}
+                    className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-active-menu)] text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
+                  >
+                    {isSavingPreferences ? "Saving..." : "Save Preferences"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      applyDisplayPreferences(defaultPreferences);
+                      setTheme(defaultPreferences.theme);
+                      setPreferences(defaultPreferences);
+                      void savePreferences(defaultPreferences);
+                    }}
+                    className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white text-sm font-semibold text-red-600 transition hover:bg-red-50"
                   >
                     <RotateCcw className="h-4 w-4" />
                     Reset to Defaults

@@ -559,6 +559,274 @@ export class ComplianceService {
     };
   }
 
+  async getActivity(policyId: string) {
+    const policy = await this.prisma.policy.findUnique({
+      where: { id: policyId },
+      select: {
+        id: true,
+        title: true,
+        version: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: true,
+      },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Policy ${policyId} was not found.`);
+    }
+
+    const userName = {
+      select: { firstName: true, lastName: true, roleTitle: true },
+    };
+
+    const [
+      assignments,
+      progress,
+      results,
+      certificates,
+      batches,
+      auditLogs,
+      assignmentCount,
+      attemptCount,
+      certificateCount,
+      notificationCount,
+    ] = await Promise.all([
+      this.prisma.policyAssignment.findMany({
+        where: { policyId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { createdBy: userName },
+      }),
+      this.prisma.policyReadingProgress.findMany({
+        where: { policyId, completedAt: { not: null } },
+        orderBy: { completedAt: 'desc' },
+        take: 25,
+        include: { user: userName },
+      }),
+      this.prisma.testResult.findMany({
+        where: { policyId },
+        orderBy: { submittedAt: 'desc' },
+        take: 25,
+        include: { user: userName },
+      }),
+      this.prisma.certificate.findMany({
+        where: { policyId },
+        orderBy: { issuedAt: 'desc' },
+        take: 20,
+        include: { user: userName },
+      }),
+      this.prisma.notificationBatch.findMany({
+        where: { policyId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      this.prisma.auditLog.findMany({
+        where: {
+          OR: [
+            { resource: policy.title },
+            { resource: policyId },
+            { details: { contains: policy.title, mode: 'insensitive' } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: {
+          user: { select: { roleTitle: true } },
+        },
+      }),
+      this.prisma.policyAssignment.count({ where: { policyId } }),
+      this.prisma.testResult.count({ where: { policyId } }),
+      this.prisma.certificate.count({ where: { policyId } }),
+      this.prisma.notificationBatch.count({ where: { policyId } }),
+    ]);
+
+    const events: Array<{
+      id: string;
+      kind: string;
+      title: string;
+      description: string;
+      actor: string;
+      actorRole: string;
+      at: Date;
+      ipAddress?: string;
+      userAgent?: string;
+      changes: string[];
+    }> = [];
+
+    events.push({
+      id: `published-${policy.id}`,
+      kind: 'published',
+      title: 'Policy Published',
+      description: `${policy.title} was published and is now active.`,
+      actor: policy.createdBy || 'System',
+      actorRole: 'Administrator',
+      at: policy.createdAt,
+      changes: [`Policy version: ${policy.version}.0`, `Status: ${policy.status}`],
+    });
+
+    if (policy.updatedAt.getTime() - policy.createdAt.getTime() > 60_000) {
+      events.push({
+        id: `updated-${policy.id}-${policy.updatedAt.toISOString()}`,
+        kind: 'update',
+        title: 'Policy Updated',
+        description: `Version ${policy.version}.0 was updated.`,
+        actor: policy.createdBy || 'System',
+        actorRole: 'Administrator',
+        at: policy.updatedAt,
+        changes: [`Policy version: ${policy.version}.0`],
+      });
+    }
+
+    for (const assignment of assignments) {
+      const actor = assignment.createdBy
+        ? this.displayName(assignment.createdBy)
+        : 'System';
+      const audience =
+        assignment.userIds.length > 0
+          ? `${assignment.userIds.length} ${assignment.userIds.length === 1 ? 'employee' : 'employees'}`
+          : assignment.scopeLabel || 'assigned employees';
+      events.push({
+        id: `assignment-${assignment.id}`,
+        kind: 'assignment',
+        title: 'Policy Assigned',
+        description: `Assigned to ${audience}.`,
+        actor,
+        actorRole: assignment.createdBy?.roleTitle || 'Administrator',
+        at: assignment.createdAt,
+        changes: [
+          `Scope: ${assignment.scopeLabel || assignment.scopeKind}`,
+          `Due date: ${this.formatDate(assignment.dueAt)}`,
+          `Status: ${assignment.status}`,
+        ],
+      });
+    }
+
+    for (const row of progress) {
+      if (!row.completedAt) continue;
+      const name = this.displayName(row.user);
+      events.push({
+        id: `reading-${row.id}`,
+        kind: 'reading',
+        title: 'Reading Completed',
+        description: `${name} finished reading this policy.`,
+        actor: name,
+        actorRole: row.user.roleTitle || 'Employee',
+        at: row.completedAt,
+        changes: [`Progress: ${row.progressPercent}%`],
+      });
+    }
+
+    for (const result of results) {
+      const name = this.displayName(result.user);
+      const score =
+        result.totalQuestions > 0
+          ? Math.round((result.score / result.totalQuestions) * 100)
+          : 0;
+      events.push({
+        id: `assessment-${result.id}`,
+        kind: result.passed ? 'completed' : 'assessment',
+        title: result.passed ? 'Assessment Passed' : 'Assessment Attempted',
+        description: `${name} ${result.passed ? 'passed' : 'attempted'} the assessment with ${score}%.`,
+        actor: name,
+        actorRole: result.user.roleTitle || 'Employee',
+        at: result.submittedAt,
+        changes: [
+          `Score: ${score}%`,
+          `Result: ${result.passed ? 'Passed' : 'Failed'}`,
+          `Correct answers: ${result.score}/${result.totalQuestions}`,
+        ],
+      });
+    }
+
+    for (const certificate of certificates) {
+      const name = this.displayName(certificate.user);
+      events.push({
+        id: `certificate-${certificate.id}`,
+        kind: 'certificate',
+        title: 'Certificate Issued',
+        description: `Certificate ${certificate.certificateNumber} was issued to ${name}.`,
+        actor: 'System',
+        actorRole: 'Auto Update',
+        at: certificate.issuedAt,
+        changes: [`Certificate: ${certificate.certificateNumber}`, `Recipient: ${name}`],
+      });
+    }
+
+    for (const batch of batches) {
+      const isEscalation = /manager|escalat/i.test(`${batch.audience} ${batch.name}`);
+      events.push({
+        id: `notification-${batch.id}`,
+        kind: isEscalation ? 'escalation' : 'notification',
+        title: isEscalation ? 'Escalation Sent' : 'Notification Sent',
+        description: `${batch.name} reached ${batch.deliveredCount} of ${batch.recipientCount} recipients.`,
+        actor: 'System',
+        actorRole: 'Auto Notification',
+        at: batch.createdAt,
+        changes: [
+          `Audience: ${batch.audience}`,
+          `Delivered: ${batch.deliveredCount}`,
+          `Failed: ${batch.failedCount}`,
+        ],
+      });
+    }
+
+    for (const log of auditLogs) {
+      if (/assigned|assignment created/i.test(log.details)) continue;
+      events.push({
+        id: `audit-${log.id}`,
+        kind: this.auditActivityKind(log.action, log.details),
+        title: this.auditActivityTitle(log.action, log.details),
+        description: log.details || `${log.action} on ${log.resource || policy.title}`,
+        actor: log.userName || 'System',
+        actorRole: log.user?.roleTitle || 'Administrator',
+        at: log.createdAt,
+        ipAddress: log.ipAddress || undefined,
+        changes: log.details ? [log.details] : [],
+      });
+    }
+
+    const seen = new Set<string>();
+    const items = events
+      .sort((left, right) => right.at.getTime() - left.at.getTime())
+      .filter((event) => {
+        const key = `${event.kind}:${event.title}:${event.description}:${event.at.toISOString()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 80)
+      .map((event) => ({
+        id: event.id,
+        kind: event.kind,
+        title: event.title,
+        description: event.description,
+        actor: event.actor,
+        actorRole: event.actorRole,
+        timestamp: event.at.toISOString(),
+        timestampLabel: this.formatEventTime(event.at),
+        ipAddress: event.ipAddress ?? null,
+        userAgent: event.userAgent ?? null,
+        changes: event.changes,
+      }));
+
+    return {
+      data: {
+        policyId: policy.id,
+        policyTitle: policy.title,
+        policyVersion: `v${policy.version}.0`,
+        events: items,
+        related: {
+          assignments: assignmentCount,
+          assessmentAttempts: attemptCount,
+          certificatesIssued: certificateCount,
+          notificationsSent: notificationCount,
+        },
+      },
+    };
+  }
+
   async getEmployees(policyId: string) {
     const policy = await this.prisma.policy.findUnique({
       where: { id: policyId },
@@ -1614,5 +1882,51 @@ export class ComplianceService {
       day: 'numeric',
       year: 'numeric',
     });
+  }
+
+  private displayName(user: { firstName: string; lastName: string }) {
+    return `${user.firstName} ${user.lastName}`.trim() || 'Unknown';
+  }
+
+  private formatDate(value: Date) {
+    return value.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  private formatEventTime(value: Date) {
+    const date = value.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const time = value.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return `${date} · ${time}`;
+  }
+
+  private auditActivityKind(action: string, details: string) {
+    const haystack = `${action} ${details}`.toLowerCase();
+    if (/remind|notification|email|in-app|inapp/.test(haystack)) return 'notification';
+    if (/certificate/.test(haystack)) return 'certificate';
+    if (/assess/.test(haystack)) return 'assessment';
+    if (/publish/.test(haystack)) return 'published';
+    if (action === 'CREATE') return 'update';
+    return 'update';
+  }
+
+  private auditActivityTitle(action: string, details: string) {
+    const haystack = `${action} ${details}`.toLowerCase();
+    if (/remind|notification|email/.test(haystack)) return 'Notification Sent';
+    if (/certificate/.test(haystack)) return 'Certificate Issued';
+    if (/assess/.test(haystack)) return 'Assessment Updated';
+    if (/publish/.test(haystack)) return 'Policy Published';
+    if (action === 'CREATE') return 'Record Created';
+    if (action === 'DELETE') return 'Record Deleted';
+    return 'Record Updated';
   }
 }
